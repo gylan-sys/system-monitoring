@@ -1,0 +1,38 @@
+{
+  "name": "LabCalib - Kalibrasi Alat Sampling",
+  "short_name": "LabCalib",
+  "description": "Sistem manajemen kalibrasi, pemeliharaan, log penggunaan, dan scan QR code alat sampling laboratorium.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#4f46e5",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Scan QR Code",
+      "short_name": "Scan QR",
+      "url": "/?tab=scan",
+      "description": "Buka scanner QR code alat langsung"
+    },
+    {
+      "name": "Daftar Alat",
+      "short_name": "Alat",
+      "url": "/?tab=equipment",
+      "description": "Lihat daftar alat laboratorium"
+    }
+  ]
+}

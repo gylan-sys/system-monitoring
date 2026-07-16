@@ -1,0 +1,6 @@
+{
+  "name": "LabCalib - Kalibrasi Alat Sampling",
+  "description": "Sistem manajemen kalibrasi, pemeliharaan, log penggunaan, dan scan QR code alat sampling laboratorium.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

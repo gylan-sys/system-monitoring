@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  labcalib:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: labcalib-app
+    restart: always
+    ports:
+      - "8080:80" # Map host port 8080 to container port 80 (Change the host port if 8080 is already used)
+    environment:
+      - NODE_ENV=production
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
