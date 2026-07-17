@@ -51,6 +51,26 @@ export default function SettingsView({ onSaveSettings }: SettingsViewProps) {
   const [logoError, setLogoError] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
 
+  useEffect(() => {
+    const handleUpdate = () => {
+      setLabName(localStorage.getItem('cfg_lab_name') || 'Laboratorium Metrologi Kimia & Fisika');
+      setWarningDays(Number(localStorage.getItem('cfg_warning_days') || '30'));
+      setDefaultPic(localStorage.getItem('cfg_default_pic') || 'Dr. Hendra Wijaya');
+      setSoundEnabled(localStorage.getItem('cfg_sound_enabled') !== 'false');
+      setAutoOpenScan(localStorage.getItem('cfg_auto_open_scan') !== 'false');
+      setAppName(localStorage.getItem('cfg_app_name') || 'LabCalib');
+      setAppSubtitle(localStorage.getItem('cfg_app_subtitle') || 'Metrologi Lab');
+      setAppLogo(localStorage.getItem('cfg_app_logo') || '🔧');
+      setSidebarBg(localStorage.getItem('cfg_sidebar_bg') || 'midnight');
+      setSidebarOpacity(localStorage.getItem('cfg_sidebar_opacity') || '85');
+      setSidebarBlur(localStorage.getItem('cfg_sidebar_blur') || 'md');
+    };
+    window.addEventListener('lab_settings_updated', handleUpdate);
+    return () => {
+      window.removeEventListener('lab_settings_updated', handleUpdate);
+    };
+  }, []);
+
   const processFile = (file: File) => {
     setLogoError(null);
     // Allow only image files

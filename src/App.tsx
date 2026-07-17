@@ -27,7 +27,7 @@ import {
   Share2
 } from 'lucide-react';
 
-import { Equipment, MaintenanceRecord, UsageLog, SystemNotification } from './types';
+import { Equipment, MaintenanceRecord, UsageLog, SystemNotification, CalibrationStatus } from './types';
 import { 
   INITIAL_EQUIPMENT, 
   INITIAL_MAINTENANCE, 
@@ -106,6 +106,114 @@ export default function App() {
   const [sidebarBg, setSidebarBg] = useState(() => localStorage.getItem('cfg_sidebar_bg') || 'midnight');
   const [sidebarOpacity, setSidebarOpacity] = useState(() => localStorage.getItem('cfg_sidebar_opacity') || '85');
   const [sidebarBlur, setSidebarBlur] = useState(() => localStorage.getItem('cfg_sidebar_blur') || 'md');
+
+  // Synchronization with server-side database
+  const syncState = async (updates: {
+    equipment?: Equipment[];
+    maintenance?: MaintenanceRecord[];
+    usageLogs?: UsageLog[];
+    notifications?: SystemNotification[];
+    settings?: any;
+  }) => {
+    try {
+      await fetch('/api/save-state', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates)
+      });
+    } catch (err) {
+      console.error('Failed to sync state to server:', err);
+    }
+  };
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const response = await fetch('/api/data');
+        if (response.ok) {
+          const db = await response.json();
+          if (db.equipment !== undefined) setEquipmentList(db.equipment);
+          if (db.maintenance !== undefined) setMaintenanceRecords(db.maintenance);
+          if (db.usageLogs !== undefined) setUsageLogs(db.usageLogs);
+          if (db.notifications !== undefined) setNotifications(db.notifications);
+          if (db.settings !== undefined) {
+            const s = db.settings;
+            if (s.appName !== undefined) { setAppName(s.appName); localStorage.setItem('cfg_app_name', s.appName); }
+            if (s.appSubtitle !== undefined) { setAppSubtitle(s.appSubtitle); localStorage.setItem('cfg_app_subtitle', s.appSubtitle); }
+            if (s.appLogo !== undefined) { setAppLogo(s.appLogo); localStorage.setItem('cfg_app_logo', s.appLogo); }
+            if (s.sidebarBg !== undefined) { setSidebarBg(s.sidebarBg); localStorage.setItem('cfg_sidebar_bg', s.sidebarBg); }
+            if (s.sidebarOpacity !== undefined) { setSidebarOpacity(s.sidebarOpacity); localStorage.setItem('cfg_sidebar_opacity', s.sidebarOpacity); }
+            if (s.sidebarBlur !== undefined) { setSidebarBlur(s.sidebarBlur); localStorage.setItem('cfg_sidebar_blur', s.sidebarBlur); }
+            
+            if (s.labName !== undefined) localStorage.setItem('cfg_lab_name', s.labName);
+            if (s.warningDays !== undefined) localStorage.setItem('cfg_warning_days', String(s.warningDays));
+            if (s.defaultPic !== undefined) localStorage.setItem('cfg_default_pic', s.defaultPic);
+            if (s.soundEnabled !== undefined) localStorage.setItem('cfg_sound_enabled', String(s.soundEnabled));
+            if (s.autoOpenScan !== undefined) localStorage.setItem('cfg_auto_open_scan', String(s.autoOpenScan));
+
+            window.dispatchEvent(new Event('lab_settings_updated'));
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch initial state from server:', err);
+      }
+    };
+
+    fetchData();
+
+    // Setup WebSocket connection
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${protocol}//${window.location.host}`;
+    let socket = new WebSocket(wsUrl);
+
+    const handleMessage = (event: MessageEvent) => {
+      try {
+        const message = JSON.parse(event.data);
+        if (message.type === 'STATE_UPDATED') {
+          const { equipment, maintenance, usageLogs, notifications: notifs, settings } = message.data;
+          if (equipment !== undefined) setEquipmentList(equipment);
+          if (maintenance !== undefined) setMaintenanceRecords(maintenance);
+          if (usageLogs !== undefined) setUsageLogs(usageLogs);
+          if (notifs !== undefined) setNotifications(notifs);
+          if (settings !== undefined) {
+            const s = settings;
+            if (s.appName !== undefined) { setAppName(s.appName); localStorage.setItem('cfg_app_name', s.appName); }
+            if (s.appSubtitle !== undefined) { setAppSubtitle(s.appSubtitle); localStorage.setItem('cfg_app_subtitle', s.appSubtitle); }
+            if (s.appLogo !== undefined) { setAppLogo(s.appLogo); localStorage.setItem('cfg_app_logo', s.appLogo); }
+            if (s.sidebarBg !== undefined) { setSidebarBg(s.sidebarBg); localStorage.setItem('cfg_sidebar_bg', s.sidebarBg); }
+            if (s.sidebarOpacity !== undefined) { setSidebarOpacity(s.sidebarOpacity); localStorage.setItem('cfg_sidebar_opacity', s.sidebarOpacity); }
+            if (s.sidebarBlur !== undefined) { setSidebarBlur(s.sidebarBlur); localStorage.setItem('cfg_sidebar_blur', s.sidebarBlur); }
+            
+            if (s.labName !== undefined) localStorage.setItem('cfg_lab_name', s.labName);
+            if (s.warningDays !== undefined) localStorage.setItem('cfg_warning_days', String(s.warningDays));
+            if (s.defaultPic !== undefined) localStorage.setItem('cfg_default_pic', s.defaultPic);
+            if (s.soundEnabled !== undefined) localStorage.setItem('cfg_sound_enabled', String(s.soundEnabled));
+            if (s.autoOpenScan !== undefined) localStorage.setItem('cfg_auto_open_scan', String(s.autoOpenScan));
+
+            window.dispatchEvent(new Event('lab_settings_updated'));
+          }
+        }
+      } catch (error) {
+        console.error('Error handling WebSocket message:', error);
+      }
+    };
+
+    socket.onmessage = handleMessage;
+
+    const handleClose = () => {
+      console.log('WS disconnected, retrying in 3 seconds...');
+      setTimeout(() => {
+        socket = new WebSocket(wsUrl);
+        socket.onmessage = handleMessage;
+        socket.onclose = handleClose;
+      }, 3000);
+    };
+    socket.onclose = handleClose;
+
+    return () => {
+      socket.close();
+    };
+  }, []);
 
   // PWA & Connection States
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
@@ -248,7 +356,8 @@ export default function App() {
       createdAt: TODAY_STR
     };
 
-    setEquipmentList(prev => [fullEq, ...prev]);
+    const nextList = [fullEq, ...equipmentList];
+    setEquipmentList(nextList);
 
     // Add logging notification
     const newNotif: SystemNotification = {
@@ -260,7 +369,9 @@ export default function App() {
       date: '2026-07-14 01:00',
       isRead: false
     };
-    setNotifications(prev => [newNotif, ...prev]);
+    const nextNotifs = [newNotif, ...notifications];
+    setNotifications(nextNotifs);
+    syncState({ equipment: nextList, notifications: nextNotifs });
   };
 
   // 1a. Batch Add/Register New Equipment (Excel Import)
@@ -286,7 +397,8 @@ export default function App() {
       };
     });
 
-    setEquipmentList(prev => [...fullEqs, ...prev]);
+    const nextList = [...fullEqs, ...equipmentList];
+    setEquipmentList(nextList);
 
     const newNotif: SystemNotification = {
       id: `NOT-${Date.now()}`,
@@ -296,12 +408,14 @@ export default function App() {
       date: '2026-07-15 18:00',
       isRead: false
     };
-    setNotifications(prev => [newNotif, ...prev]);
+    const nextNotifs = [newNotif, ...notifications];
+    setNotifications(nextNotifs);
+    syncState({ equipment: nextList, notifications: nextNotifs });
   };
 
   // 1b. Update Existing Equipment
   const handleUpdateEquipment = (id: string, updatedFields: Omit<Equipment, 'id' | 'status' | 'createdAt'> & { status?: CalibrationStatus }) => {
-    setEquipmentList(prev => prev.map(eq => {
+    const nextList = equipmentList.map(eq => {
       if (eq.id === id) {
         const calculatedStatus = updatedFields.status !== undefined
           ? updatedFields.status
@@ -313,7 +427,8 @@ export default function App() {
         };
       }
       return eq;
-    }));
+    });
+    setEquipmentList(nextList);
 
     // Add logging notification
     const newNotif: SystemNotification = {
@@ -325,15 +440,22 @@ export default function App() {
       date: '2026-07-14 01:00',
       isRead: false
     };
-    setNotifications(prev => [newNotif, ...prev]);
+    const nextNotifs = [newNotif, ...notifications];
+    setNotifications(nextNotifs);
+    syncState({ equipment: nextList, notifications: nextNotifs });
   };
 
   // 2. Delete Equipment
   const handleDeleteEquipment = (id: string) => {
-    setEquipmentList(prev => prev.filter(eq => eq.id !== id));
-    setMaintenanceRecords(prev => prev.filter(rec => rec.equipmentId !== id));
-    setUsageLogs(prev => prev.filter(log => log.equipmentId !== id));
+    const nextEq = equipmentList.filter(eq => eq.id !== id);
+    const nextMaint = maintenanceRecords.filter(rec => rec.equipmentId !== id);
+    const nextLogs = usageLogs.filter(log => log.equipmentId !== id);
+
+    setEquipmentList(nextEq);
+    setMaintenanceRecords(nextMaint);
+    setUsageLogs(nextLogs);
     setSelectedEqId(null);
+    syncState({ equipment: nextEq, maintenance: nextMaint, usageLogs: nextLogs });
   };
 
   // 3. Add Maintenance record
@@ -348,11 +470,15 @@ export default function App() {
       equipmentName: targetEq.name,
     };
 
-    setMaintenanceRecords(prev => [newRecord, ...prev]);
+    const nextMaint = [newRecord, ...maintenanceRecords];
+    setMaintenanceRecords(nextMaint);
+
+    let nextEq = equipmentList;
+    let nextNotifs = notifications;
 
     // IMPORTANT LOGIC: If maintenance type is "Kalibrasi", we automatically renew the last/next calibration dates!
     if (record.type === 'Kalibrasi') {
-      setEquipmentList(prevList => prevList.map(eq => {
+      nextEq = equipmentList.map(eq => {
         if (eq.id === record.equipmentId) {
           // Compute next date based on months interval
           const lastDate = new Date(record.date);
@@ -370,7 +496,8 @@ export default function App() {
           };
         }
         return eq;
-      }));
+      });
+      setEquipmentList(nextEq);
 
       // Fire a nice notification
       const newNotif: SystemNotification = {
@@ -382,7 +509,8 @@ export default function App() {
         date: '2026-07-14 01:00',
         isRead: false
       };
-      setNotifications(prev => [newNotif, ...prev]);
+      nextNotifs = [newNotif, ...notifications];
+      setNotifications(nextNotifs);
     } else {
       // General service log notification
       const newNotif: SystemNotification = {
@@ -394,13 +522,15 @@ export default function App() {
         date: '2026-07-14 01:00',
         isRead: false
       };
-      setNotifications(prev => [newNotif, ...prev]);
+      nextNotifs = [newNotif, ...notifications];
+      setNotifications(nextNotifs);
     }
+    syncState({ equipment: nextEq, maintenance: nextMaint, notifications: nextNotifs });
   };
 
   // 4. Upload Certificate for existing equipment
   const handleUploadCertificate = (id: string, name: string, base64: string) => {
-    setEquipmentList(prevList => prevList.map(eq => {
+    const nextList = equipmentList.map(eq => {
       if (eq.id === id) {
         return {
           ...eq,
@@ -410,7 +540,8 @@ export default function App() {
         };
       }
       return eq;
-    }));
+    });
+    setEquipmentList(nextList);
 
     // Trigger notification
     const matched = equipmentList.find(e => e.id === id);
@@ -423,7 +554,9 @@ export default function App() {
       date: '2026-07-14 01:00',
       isRead: false
     };
-    setNotifications(prev => [newNotif, ...prev]);
+    const nextNotifs = [newNotif, ...notifications];
+    setNotifications(nextNotifs);
+    syncState({ equipment: nextList, notifications: nextNotifs });
   };
 
   // 5. Start Usage log session (Check-out)
@@ -446,7 +579,8 @@ export default function App() {
       status: 'Sedang Digunakan'
     };
 
-    setUsageLogs(prev => [newLog, ...prev]);
+    const nextLogs = [newLog, ...usageLogs];
+    setUsageLogs(nextLogs);
 
     // Add system notification for administrative logbook tracking
     const newNotif: SystemNotification = {
@@ -458,12 +592,14 @@ export default function App() {
       date: '2026-07-14 01:00',
       isRead: false
     };
-    setNotifications(prev => [newNotif, ...prev]);
+    const nextNotifs = [newNotif, ...notifications];
+    setNotifications(nextNotifs);
+    syncState({ usageLogs: nextLogs, notifications: nextNotifs });
   };
 
   // 6. End Usage log session (Check-in)
   const handleEndUsage = (logId: string, notes: string) => {
-    setUsageLogs(prevLogs => prevLogs.map(log => {
+    const nextLogs = usageLogs.map(log => {
       if (log.id === logId) {
         return {
           ...log,
@@ -474,7 +610,8 @@ export default function App() {
         };
       }
       return log;
-    }));
+    });
+    setUsageLogs(nextLogs);
 
     // Add completion notification
     const matchedLog = usageLogs.find(l => l.id === logId);
@@ -487,12 +624,16 @@ export default function App() {
       date: '2026-07-14 01:00',
       isRead: false
     };
-    setNotifications(prev => [newNotif, ...prev]);
+    const nextNotifs = [newNotif, ...notifications];
+    setNotifications(nextNotifs);
+    syncState({ usageLogs: nextLogs, notifications: nextNotifs });
   };
 
   // Mark all alerts read
   const handleMarkAllNotificationsRead = () => {
-    setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
+    const nextNotifs = notifications.map(n => ({ ...n, isRead: true }));
+    setNotifications(nextNotifs);
+    syncState({ notifications: nextNotifs });
   };
 
   const unreadCount = notifications.filter(n => !n.isRead).length;
@@ -564,7 +705,7 @@ export default function App() {
         );
       case 'pengaturan':
         return (
-          <SettingsView />
+          <SettingsView onSaveSettings={(settings) => syncState({ settings })} />
         );
       default:
         return <div className="text-center py-12">Halaman tidak ditemukan.</div>;

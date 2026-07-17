@@ -36,7 +36,7 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { TODAY_STR } from '../mockData';
-import { Equipment, MaintenanceRecord, UsageLog, MaintenanceType } from '../types';
+import { Equipment, MaintenanceRecord, UsageLog, MaintenanceType, CalibrationStatus } from '../types';
 import { formatDateIndo, determineStatus, generateMockCertificateHtml, getDaysRemaining } from '../utils/helpers';
 
 interface EquipmentViewProps {
