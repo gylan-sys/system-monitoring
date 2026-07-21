@@ -25,6 +25,8 @@ export interface Equipment {
   createdAt: string;
   inventoryNumber?: string;
   calibrationPoints?: string;
+  scope?: 'bersama' | 'tim';
+  assignedTeam?: string; // e.g., 'Tim A', 'Tim B'
 }
 
 export type MaintenanceType = 'Pembersihan' | 'Kalibrasi' | 'Perbaikan' | 'Pengecekan Rutin';
@@ -45,13 +47,28 @@ export interface UsageLog {
   equipmentId: string;
   equipmentName: string;
   operator: string;
+  operatorTeam?: string; // Team of the operator
   startDate: string; // YYYY-MM-DD
   startTime: string; // HH:MM
   endDate: string | null;
   endTime: string | null;
   purpose: string;
   notes: string;
-  status: 'Sedang Digunakan' | 'Selesai';
+  status: 'Sedang Digunakan' | 'Menunggu Verifikasi' | 'Selesai';
+  verifiedBy?: string;
+  verifiedDate?: string;
+  verificationNotes?: string;
+  verificationCondition?: 'Sehat' | 'Ada Kendala';
+}
+
+export interface User {
+  id: string;
+  username: string;
+  password?: string; // plaintext for simple server-side db storage
+  name: string;
+  role: 'admin' | 'petugas';
+  team?: string; // e.g., 'Tim A', 'Tim B', 'Tim C' or empty for admin
+  createdAt?: string;
 }
 
 export interface SystemNotification {

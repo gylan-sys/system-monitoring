@@ -21,16 +21,39 @@ import {
   Trash2,
   Smartphone,
   Download,
-  Share2
+  Share2,
+  Users,
+  UserPlus,
+  Shield,
+  ToggleLeft,
+  ToggleRight,
+  Plus
 } from 'lucide-react';
+import { User } from '../types';
 
 interface SettingsViewProps {
   onSaveSettings?: (settings: any) => void;
+  usersList?: User[];
+  onUpdateUsers?: (users: User[]) => void;
+  teamsList?: string[];
+  onUpdateTeams?: (teams: string[]) => void;
+  selfRegistrationEnabled?: boolean;
+  onUpdateSelfRegistration?: (enabled: boolean) => void;
+  currentUser?: User | null;
 }
 
-export default function SettingsView({ onSaveSettings }: SettingsViewProps) {
+export default function SettingsView({ 
+  onSaveSettings,
+  usersList = [],
+  onUpdateUsers,
+  teamsList = ['Tim A', 'Tim B', 'Tim C', 'Tim D'],
+  onUpdateTeams,
+  selfRegistrationEnabled = true,
+  onUpdateSelfRegistration,
+  currentUser
+}: SettingsViewProps) {
   // Navigation sub-tab
-  const [activeSubTab, setActiveSubTab] = useState<'system' | 'branding' | 'pwa'>('system');
+  const [activeSubTab, setActiveSubTab] = useState<'system' | 'branding' | 'users'>('system');
 
   // System Settings States
   const [labName, setLabName] = useState(() => localStorage.getItem('cfg_lab_name') || 'Laboratorium Metrologi Kimia & Fisika');
@@ -46,10 +69,30 @@ export default function SettingsView({ onSaveSettings }: SettingsViewProps) {
   const [sidebarBg, setSidebarBg] = useState(() => localStorage.getItem('cfg_sidebar_bg') || 'midnight');
   const [sidebarOpacity, setSidebarOpacity] = useState(() => localStorage.getItem('cfg_sidebar_opacity') || '85');
   const [sidebarBlur, setSidebarBlur] = useState(() => localStorage.getItem('cfg_sidebar_blur') || 'md');
+  const [appBg, setAppBg] = useState(() => localStorage.getItem('cfg_app_bg') || 'slate');
+  const [loginBg, setLoginBg] = useState(() => localStorage.getItem('cfg_login_bg') || 'dark');
+  const [loginBgHistory, setLoginBgHistory] = useState<string[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('cfg_login_bg_history') || '[]');
+    } catch {
+      return [];
+    }
+  });
+  const [bgUploadError, setBgUploadError] = useState<string | null>(null);
   
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [logoError, setLogoError] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
+
+  // States for user / team management
+  const [newTeamName, setNewTeamName] = useState('');
+  const [newUsername, setNewUsername] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [newName, setNewName] = useState('');
+  const [newUserRole, setNewUserRole] = useState<'admin' | 'petugas'>('petugas');
+  const [newUserTeam, setNewUserTeam] = useState(teamsList[0] || 'Tim A');
+  const [userError, setUserError] = useState<string | null>(null);
+  const [userSuccess, setUserSuccess] = useState<string | null>(null);
 
   useEffect(() => {
     const handleUpdate = () => {
@@ -64,6 +107,8 @@ export default function SettingsView({ onSaveSettings }: SettingsViewProps) {
       setSidebarBg(localStorage.getItem('cfg_sidebar_bg') || 'midnight');
       setSidebarOpacity(localStorage.getItem('cfg_sidebar_opacity') || '85');
       setSidebarBlur(localStorage.getItem('cfg_sidebar_blur') || 'md');
+      setAppBg(localStorage.getItem('cfg_app_bg') || 'slate');
+      setLoginBg(localStorage.getItem('cfg_login_bg') || 'dark');
     };
     window.addEventListener('lab_settings_updated', handleUpdate);
     return () => {
@@ -128,6 +173,80 @@ export default function SettingsView({ onSaveSettings }: SettingsViewProps) {
     setLogoError(null);
   };
 
+  const compressAndAddBg = (file: File) => {
+    setBgUploadError(null);
+    if (!file.type.startsWith('image/')) {
+      setBgUploadError('Hanya mendukung file gambar (PNG, JPG, dll).');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.src = event.target?.result as string;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_WIDTH = 1000;
+        const MAX_HEIGHT = 1000;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > MAX_WIDTH) {
+            height = Math.round((height * MAX_WIDTH) / width);
+            width = MAX_WIDTH;
+          }
+        } else {
+          if (height > MAX_HEIGHT) {
+            width = Math.round((width * MAX_HEIGHT) / height);
+            height = MAX_HEIGHT;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          const compressedBase64 = canvas.toDataURL('image/jpeg', 0.7);
+          
+          const updatedHistory = [compressedBase64, ...loginBgHistory.filter(x => x !== compressedBase64)].slice(0, 8);
+          setLoginBgHistory(updatedHistory);
+          localStorage.setItem('cfg_login_bg_history', JSON.stringify(updatedHistory));
+          setLoginBg(compressedBase64);
+        } else {
+          setBgUploadError('Gagal melakukan kompresi gambar.');
+        }
+      };
+      img.onerror = () => {
+        setBgUploadError('Gagal membaca data file gambar.');
+      };
+    };
+    reader.onerror = () => {
+      setBgUploadError('Gagal membaca file gambar.');
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleBgFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      compressAndAddBg(file);
+    }
+  };
+
+  const handleDeleteBgHistory = (bgToDelete: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const updatedHistory = loginBgHistory.filter(bg => bg !== bgToDelete);
+    setLoginBgHistory(updatedHistory);
+    localStorage.setItem('cfg_login_bg_history', JSON.stringify(updatedHistory));
+    
+    // If deleted bg was the active one, fallback to 'dark'
+    if (loginBg === bgToDelete) {
+      setLoginBg('dark');
+    }
+  };
+
   const sidebarThemes = [
     { id: 'midnight', name: 'Slate Midnight', desc: 'Gelap berkelas, profesional', tint: 'bg-slate-950 border-slate-800' },
     { id: 'glass', name: 'Glassmorphic Clear', desc: 'Transparan elegan & modern', tint: 'bg-slate-900/60 border-slate-700/50' },
@@ -153,6 +272,8 @@ export default function SettingsView({ onSaveSettings }: SettingsViewProps) {
     localStorage.setItem('cfg_sidebar_bg', sidebarBg);
     localStorage.setItem('cfg_sidebar_opacity', String(sidebarOpacity));
     localStorage.setItem('cfg_sidebar_blur', sidebarBlur);
+    localStorage.setItem('cfg_app_bg', appBg);
+    localStorage.setItem('cfg_login_bg', loginBg);
 
     // Dispatch event so App.tsx and other views can adapt instantly
     window.dispatchEvent(new Event('lab_settings_updated'));
@@ -172,7 +293,9 @@ export default function SettingsView({ onSaveSettings }: SettingsViewProps) {
         appLogo,
         sidebarBg,
         sidebarOpacity,
-        sidebarBlur
+        sidebarBlur,
+        appBg,
+        loginBg
       });
     }
   };
@@ -217,10 +340,10 @@ export default function SettingsView({ onSaveSettings }: SettingsViewProps) {
             <div className="p-2 bg-indigo-50 rounded-lg text-indigo-600">
               <Settings size={20} />
             </div>
-            <h1 className="text-lg font-bold text-slate-900">Pengaturan & Panduan Aplikasi</h1>
+            <h1 className="text-lg font-bold text-slate-900">Pengaturan</h1>
           </div>
           <p className="text-slate-500 text-xs mt-1">
-            Konfigurasi preferensi sistem laboratorium, sesuaikan tampilan aplikasi {appName}, dan pelajari panduan standar kalibrasi.
+            Konfigurasi preferensi sistem laboratorium, sesuaikan tampilan aplikasi {appName}, dan kelola akun pengguna.
           </p>
         </div>
       </div>
@@ -237,7 +360,7 @@ export default function SettingsView({ onSaveSettings }: SettingsViewProps) {
           }`}
         >
           <Sliders size={14} />
-          <span>Preferensi Sistem & SOP</span>
+          <span>Preferensi</span>
         </button>
         <button
           type="button"
@@ -249,19 +372,19 @@ export default function SettingsView({ onSaveSettings }: SettingsViewProps) {
           }`}
         >
           <Palette size={14} />
-          <span>Konfigurasi Tampilan App (Sidebar)</span>
+          <span>Tampilan</span>
         </button>
         <button
           type="button"
-          onClick={() => setActiveSubTab('pwa')}
+          onClick={() => setActiveSubTab('users')}
           className={`flex items-center space-x-2 px-5 py-3 text-xs font-bold border-b-2 transition-all cursor-pointer ${
-            activeSubTab === 'pwa'
+            activeSubTab === 'users'
               ? 'border-indigo-600 text-indigo-600'
               : 'border-transparent text-slate-500 hover:text-slate-800'
           }`}
         >
-          <Smartphone size={14} />
-          <span>Aplikasi Mobile & Offline (PWA)</span>
+          <Users size={14} />
+          <span>User</span>
         </button>
       </div>
 
@@ -589,81 +712,412 @@ export default function SettingsView({ onSaveSettings }: SettingsViewProps) {
                         </div>
                         <p className="text-[8px] text-slate-400">Efek blur akan mempercantik tampilan elemen yang berada di belakang sidebar.</p>
                       </div>
+
+                      {/* App Background Theme Control */}
+                      <div className="space-y-2 pt-2 col-span-1 md:col-span-2">
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Tema Background Aplikasi (Main Container)</label>
+                        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 bg-slate-100 p-1 rounded-xl border border-slate-200/50">
+                          {[
+                            { id: 'slate', name: 'Slate Light', tint: 'bg-slate-50 border-slate-200' },
+                            { id: 'indigo', name: 'Indigo Soft', tint: 'bg-indigo-50/50 border-indigo-200' },
+                            { id: 'cream', name: 'Cream Warm', tint: 'bg-amber-50/30 border-amber-200' },
+                            { id: 'obsidian', name: 'Obsidian Dark', tint: 'bg-slate-950 border-slate-800' },
+                            { id: 'charcoal', name: 'Charcoal Tech', tint: 'bg-zinc-900 border-zinc-800' },
+                          ].map((themeOption) => (
+                            <button
+                              key={themeOption.id}
+                              type="button"
+                              onClick={() => setAppBg(themeOption.id)}
+                              className={`py-2 px-1 text-[10px] font-bold rounded-lg cursor-pointer transition flex flex-col items-center gap-1.5 ${appBg === themeOption.id ? 'bg-white text-indigo-600 shadow-xs border border-indigo-200/30' : 'text-slate-500 hover:text-slate-700'}`}
+                            >
+                              <div className={`w-4 h-4 rounded-full border ${themeOption.tint}`} />
+                              <span>{themeOption.name}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Login Background Theme Control */}
+                      <div className="space-y-4 pt-4 col-span-1 md:col-span-2 border-t border-slate-100">
+                        <div>
+                          <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block mb-1">Background Halaman Login</label>
+                          <p className="text-[9px] text-slate-400">Pilih dari preset berkinerja tinggi atau unggah foto latar belakang kustom Anda sendiri.</p>
+                        </div>
+
+                        {/* Presets Grid */}
+                        <div className="space-y-2">
+                          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">1. Preset Warna & Tema</span>
+                          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 bg-slate-100 p-1 rounded-xl border border-slate-200/50">
+                            {[
+                              { id: 'dark', name: 'Classic Space', tint: 'bg-slate-900 border-slate-700' },
+                              { id: 'forest', name: 'Midnight Forest', tint: 'bg-zinc-950 border-emerald-950' },
+                              { id: 'cyber', name: 'Cyber Purple', tint: 'bg-slate-950 border-purple-950' },
+                              { id: 'sunset', name: 'Warm Sunset', tint: 'bg-zinc-900 border-orange-950' },
+                              { id: 'light', name: 'Minimal Light', tint: 'bg-slate-100 border-slate-200' },
+                            ].map((themeOption) => (
+                              <button
+                                key={themeOption.id}
+                                type="button"
+                                onClick={() => setLoginBg(themeOption.id)}
+                                className={`py-2 px-1 text-[10px] font-bold rounded-lg cursor-pointer transition flex flex-col items-center gap-1.5 ${loginBg === themeOption.id ? 'bg-white text-indigo-600 shadow-xs border border-indigo-200/30' : 'text-slate-500 hover:text-slate-700'}`}
+                              >
+                                <div className={`w-4 h-4 rounded-full border ${themeOption.tint}`} />
+                                <span className="truncate max-w-full px-1">{themeOption.name}</span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Custom Image Upload & History */}
+                        <div className="space-y-3 bg-slate-50 p-3 rounded-2xl border border-slate-200/50">
+                          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">2. Unggah Gambar Latar Kustom (Maks 1MB)</span>
+                          
+                          <div className="flex flex-col sm:flex-row gap-3">
+                            {/* File Selector Card */}
+                            <label className="flex-1 flex flex-col items-center justify-center border-2 border-dashed border-slate-300 hover:border-indigo-400 bg-white p-4 rounded-xl cursor-pointer transition hover:bg-indigo-50/10 text-center">
+                              <Upload className="text-slate-400 mb-1.5" size={18} />
+                              <span className="text-[10px] font-black text-slate-700">Pilih / Seret Gambar</span>
+                              <span className="text-[8px] text-slate-400 mt-0.5">PNG, JPG, JPEG (Compressed Auto)</span>
+                              <input
+                                type="file"
+                                accept="image/*"
+                                onChange={handleBgFileChange}
+                                className="hidden"
+                              />
+                            </label>
+
+                            {/* Live Custom Image Indicator */}
+                            {loginBg && !['dark', 'forest', 'cyber', 'sunset', 'light'].includes(loginBg) && (
+                              <div className="w-full sm:w-1/3 bg-white p-2 rounded-xl border border-slate-200 flex flex-col items-center justify-center text-center">
+                                <div 
+                                  className="w-16 h-10 rounded border border-slate-200 shadow-inner bg-cover bg-center mb-1.5"
+                                  style={{ backgroundImage: `url(${loginBg})` }}
+                                />
+                                <span className="text-[8px] font-extrabold text-indigo-600 uppercase">Aktif Sekarang</span>
+                                <button
+                                  type="button"
+                                  onClick={() => setLoginBg('dark')}
+                                  className="text-[8px] font-bold text-rose-500 hover:underline mt-0.5"
+                                >
+                                  Kembali ke Preset
+                                </button>
+                              </div>
+                            )}
+                          </div>
+
+                          {bgUploadError && (
+                            <p className="text-[9px] text-rose-600 font-bold bg-rose-50 p-2 rounded-lg border border-rose-100">
+                              ⚠️ {bgUploadError}
+                            </p>
+                          )}
+
+                          {/* Uploaded History section */}
+                          <div className="space-y-2 pt-1">
+                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Histori Unggahan Latar</span>
+                            
+                            {loginBgHistory.length === 0 ? (
+                              <p className="text-[9px] text-slate-400 italic py-1">Belum ada foto yang diunggah. Foto kustom Anda akan muncul di sini.</p>
+                            ) : (
+                              <div className="grid grid-cols-4 sm:grid-cols-8 gap-2">
+                                {loginBgHistory.map((bgUrl, index) => {
+                                  const isActive = loginBg === bgUrl;
+                                  return (
+                                    <div 
+                                      key={index}
+                                      onClick={() => setLoginBg(bgUrl)}
+                                      className={`relative aspect-video rounded-lg border overflow-hidden cursor-pointer group shadow-xs transition ${
+                                        isActive 
+                                          ? 'border-indigo-500 ring-2 ring-indigo-500/20' 
+                                          : 'border-slate-200 hover:border-slate-400'
+                                      }`}
+                                    >
+                                      <div 
+                                        className="w-full h-full bg-cover bg-center"
+                                        style={{ backgroundImage: `url(${bgUrl})` }}
+                                      />
+                                      
+                                      {/* Selection check indicator */}
+                                      {isActive && (
+                                        <div className="absolute inset-0 bg-indigo-600/20 flex items-center justify-center">
+                                          <div className="bg-indigo-600 text-white rounded-full p-0.5">
+                                            <Check size={10} strokeWidth={3} />
+                                          </div>
+                                        </div>
+                                      )}
+
+                                      {/* Hover Action to delete */}
+                                      <button
+                                        type="button"
+                                        onClick={(e) => handleDeleteBgHistory(bgUrl, e)}
+                                        className="absolute top-1 right-1 p-0.5 bg-black/60 hover:bg-rose-600 text-white rounded opacity-0 group-hover:opacity-100 transition"
+                                        title="Hapus histori"
+                                      >
+                                        <Trash2 size={8} />
+                                      </button>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
               </>
             ) : (
-              // TAB 3: PWA MOBILE & OFFLINE GUIDE
+              // TAB 3: USERS & TEAMS MANAGEMENT (formerly TAB 4)
               <>
-                <div className="p-5 border-b border-slate-100 bg-indigo-50/20">
+                <div className="p-5 border-b border-slate-100 bg-slate-50/50">
                   <h2 className="text-sm font-bold text-slate-800 flex items-center">
-                    <Smartphone className="text-indigo-500 mr-2" size={16} />
-                    Aplikasi Mobile & Dukungan Offline (PWA)
+                    <Users className="text-indigo-500 mr-2" size={16} />
+                    Manajemen Petugas & Tim Sampling
                   </h2>
                 </div>
-                <div className="p-6 space-y-6 text-xs text-slate-600 leading-relaxed">
-                  <div className="p-4 bg-indigo-50/70 border border-indigo-100 rounded-xl space-y-2">
-                    <h4 className="font-bold text-indigo-950 flex items-center">
-                      <Smartphone className="text-indigo-600 mr-1.5" size={14} />
-                      Mengapa Menggunakan Versi PWA?
-                    </h4>
-                    <p className="text-[11px] text-indigo-800/95">
-                      Progressive Web App (PWA) mengubah web ini menjadi aplikasi ponsel yang bisa diinstal langsung ke layar utama handphone (Android & iPhone) tanpa memerlukan App Store/Play Store. Ini memberikan efisiensi kerja lapangan tertinggi bagi admin dan petugas lab.
-                    </p>
-                  </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {/* Android Card */}
-                    <div className="border border-slate-100 rounded-xl p-4 space-y-3 bg-slate-50/30 hover:bg-slate-50/80 transition">
-                      <div className="flex items-center space-x-2 text-indigo-600">
-                        <span className="bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-md font-extrabold text-[10px]">Android</span>
-                        <span className="font-bold text-slate-800">Browser Google Chrome</span>
-                      </div>
-                      <ol className="list-decimal pl-4 space-y-2 text-[11px] font-medium text-slate-600">
-                        <li>Buka aplikasi <span className="font-bold">Google Chrome</span> di HP Anda.</li>
-                        <li>Kunjungi alamat server aplikasi LabCalib Anda.</li>
-                        <li>Tekan tombol <span className="font-bold text-indigo-600">"Pasang Aplikasi HP"</span> yang berkedip di pojok kiri bawah menu samping (sidebar).</li>
-                        <li>Atau, klik ikon titik tiga <span className="font-bold">(⋮)</span> di pojok kanan atas Chrome, lalu pilih <span className="font-bold text-slate-800">"Tambahkan ke Layar Utama"</span> atau <span className="font-bold text-indigo-600">"Instal Aplikasi"</span>.</li>
-                        <li>Selesai! LabCalib kini terpasang langsung di laci aplikasi Anda.</li>
-                      </ol>
+                <div className="p-6 space-y-6 text-xs text-slate-600">
+                  {currentUser?.role !== 'admin' ? (
+                    <div className="p-5 bg-rose-50 border border-rose-100 rounded-2xl space-y-3">
+                      <h4 className="font-bold text-rose-950 flex items-center">
+                        <ShieldAlert className="text-rose-600 mr-1.5" size={16} />
+                        Akses Dibatasi
+                      </h4>
+                      <p className="text-[11px] text-rose-800 leading-relaxed">
+                        Halaman manajemen petugas, pembagian tim sampling, dan registrasi mandiri hanya dapat diakses oleh Administrator Sistem. Petugas sampling Anda saat ini hanya memiliki izin pengisian log, melihat peralatan, dan scan QR.
+                      </p>
                     </div>
-
-                    {/* iOS Card */}
-                    <div className="border border-slate-100 rounded-xl p-4 space-y-3 bg-slate-50/30 hover:bg-slate-50/80 transition">
-                      <div className="flex items-center space-x-2 text-indigo-600">
-                        <span className="bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-md font-extrabold text-[10px]">iOS / iPhone</span>
-                        <span className="font-bold text-slate-800">Browser Apple Safari</span>
+                  ) : (
+                    <div className="space-y-6">
+                      {/* Self Registration Config */}
+                      <div className="p-4 bg-slate-50 border border-slate-100 rounded-xl space-y-4">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <h4 className="font-bold text-slate-800">Registrasi Mandiri (Self-Registration)</h4>
+                            <p className="text-[10px] text-slate-500 mt-0.5">Ijinkan petugas sampling mendaftar akun baru sendiri di halaman masuk.</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => onUpdateSelfRegistration && onUpdateSelfRegistration(!selfRegistrationEnabled)}
+                            className="focus:outline-none cursor-pointer"
+                          >
+                            {selfRegistrationEnabled ? (
+                              <ToggleRight className="text-indigo-600" size={36} />
+                            ) : (
+                              <ToggleLeft className="text-slate-400" size={36} />
+                            )}
+                          </button>
+                        </div>
                       </div>
-                      <ol className="list-decimal pl-4 space-y-2 text-[11px] font-medium text-slate-600">
-                        <li>Buka aplikasi <span className="font-bold text-indigo-600">Safari</span> bawaan iPhone Anda (PWA tidak didukung oleh browser Chrome di iOS).</li>
-                        <li>Kunjungi alamat server LabCalib Anda.</li>
-                        <li>Tekan tombol <span className="font-bold text-slate-800">"Share / Bagikan"</span> (panah ke atas keluar dari kotak) di menu bar Safari bawah.</li>
-                        <li>Gulir ke bawah pada lembar bagikan, pilih opsi <span className="font-bold text-indigo-600">"Add to Home Screen / Tambahkan ke Layar Utama"</span>.</li>
-                        <li>Beri nama <span className="font-bold">"LabCalib"</span>, lalu tap <span className="font-bold text-indigo-600">"Add / Tambah"</span> di pojok kanan atas.</li>
-                      </ol>
-                    </div>
-                  </div>
 
-                  <div className="border border-amber-100 bg-amber-50/60 rounded-xl p-4 space-y-2.5">
-                    <h4 className="font-bold text-amber-950 flex items-center">
-                      <Sliders className="text-amber-600 mr-1.5" size={14} />
-                      Fitur Unggulan Kerja Lapangan (Offline Mode)
-                    </h4>
-                    <p className="text-[11px] text-amber-800/90 leading-relaxed">
-                      Dengan service worker terintegrasi, seluruh file aset aplikasi tersimpan aman di memori ponsel. Jika Anda melakukan pengambilan sampling atau pengecekan di laboratorium tertutup tanpa koneksi internet (blank spot):
-                    </p>
-                    <ul className="list-disc pl-4 space-y-1 text-[11px] font-medium text-amber-900/90">
-                      <li>Kamera scanner QR tetap berfungsi mencari alat yang terdaftar.</li>
-                      <li>Riwayat kalibrasi dan SOP penanganan dapat dibaca secara offline penuh.</li>
-                      <li>Input log penggunaan alat langsung disimpan di database lokal ponsel dan disinkronkan secara aman.</li>
-                    </ul>
-                  </div>
+                      {/* Teams management */}
+                      <div className="p-4 border border-slate-100 rounded-xl space-y-4">
+                        <h4 className="font-bold text-slate-800">Daftar Tim Sampling</h4>
+                        
+                        {/* Add team form */}
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            value={newTeamName}
+                            onChange={(e) => setNewTeamName(e.target.value)}
+                            placeholder="Contoh: Tim E"
+                            className="flex-1 px-3 py-1.5 border border-slate-200 rounded-lg text-xs font-semibold focus:outline-none"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (newTeamName.trim()) {
+                                if (teamsList.includes(newTeamName.trim())) {
+                                  setUserError('Nama tim sudah terdaftar.');
+                                  return;
+                                }
+                                onUpdateTeams && onUpdateTeams([...teamsList, newTeamName.trim()]);
+                                setNewTeamName('');
+                                setUserSuccess('Tim baru berhasil ditambahkan.');
+                                setTimeout(() => setUserSuccess(null), 2500);
+                              }
+                            }}
+                            className="px-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold flex items-center space-x-1 cursor-pointer"
+                          >
+                            <Plus size={14} />
+                            <span>Tambah Tim</span>
+                          </button>
+                        </div>
+
+                        {/* List current teams */}
+                        <div className="flex flex-wrap gap-2 pt-2">
+                          {teamsList.map((t) => (
+                            <span key={t} className="px-2.5 py-1.5 bg-indigo-50 border border-indigo-100 text-indigo-700 font-bold rounded-xl flex items-center space-x-1.5">
+                              <span>{t}</span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (teamsList.length <= 1) {
+                                    setUserError('Sistem harus memiliki minimal 1 tim sampling.');
+                                    return;
+                                  }
+                                  onUpdateTeams && onUpdateTeams(teamsList.filter(team => team !== t));
+                                  setUserSuccess(`Tim ${t} dihapus.`);
+                                  setTimeout(() => setUserSuccess(null), 2500);
+                                }}
+                                className="text-indigo-400 hover:text-indigo-600 focus:outline-none"
+                              >
+                                &times;
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Feedback Messages */}
+                      {userError && (
+                        <div className="p-2.5 bg-rose-50 border border-rose-100 rounded-lg text-rose-700 font-medium">
+                          {userError}
+                          <button onClick={() => setUserError(null)} className="float-right font-bold">&times;</button>
+                        </div>
+                      )}
+                      {userSuccess && (
+                        <div className="p-2.5 bg-emerald-50 border border-emerald-100 rounded-lg text-emerald-700 font-medium">
+                          {userSuccess}
+                        </div>
+                      )}
+
+                      {/* Users Management */}
+                      <div className="border border-slate-100 rounded-xl p-4 space-y-4">
+                        <h4 className="font-bold text-slate-800">Daftar Akun Pengguna</h4>
+                        
+                        {/* Users List Table */}
+                        <div className="overflow-x-auto rounded-xl border border-slate-100 divide-y divide-slate-100">
+                          {usersList.map((u) => (
+                            <div key={u.id} className="p-3 flex items-center justify-between text-xs bg-white hover:bg-slate-50/50 transition">
+                              <div className="min-w-0">
+                                <p className="font-bold text-slate-800">{u.name}</p>
+                                <p className="text-[10px] text-slate-400 mt-0.5">
+                                  Username: <span className="font-semibold text-slate-600">{u.username}</span> | Password: <span className="text-slate-600">{u.password}</span>
+                                </p>
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                <span className={`px-2 py-0.5 rounded-md font-bold text-[9px] ${
+                                  u.role === 'admin' 
+                                    ? 'bg-rose-50 border border-rose-100 text-rose-700' 
+                                    : 'bg-indigo-50 border border-indigo-100 text-indigo-700'
+                                }`}>
+                                  {u.role === 'admin' ? 'Admin' : u.team || 'Petugas'}
+                                </span>
+                                {currentUser?.id !== u.id && u.username !== 'admin' && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const filtered = usersList.filter(user => user.id !== u.id);
+                                      onUpdateUsers && onUpdateUsers(filtered);
+                                      setUserSuccess('Akun pengguna berhasil dihapus.');
+                                      setTimeout(() => setUserSuccess(null), 2500);
+                                    }}
+                                    className="p-1 text-slate-400 hover:text-rose-600 rounded-md transition cursor-pointer"
+                                    title="Hapus Pengguna"
+                                  >
+                                    <Trash2 size={13} />
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Add User Form */}
+                        <div className="pt-3 border-t border-slate-100 space-y-3">
+                          <h5 className="font-bold text-slate-800 flex items-center">
+                            <UserPlus className="text-indigo-500 mr-1.5" size={13} />
+                            Tambah Akun Pengguna Baru
+                          </h5>
+                          
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <input
+                              type="text"
+                              value={newName}
+                              onChange={(e) => setNewName(e.target.value)}
+                              placeholder="Nama Lengkap"
+                              className="px-3 py-2 border border-slate-200 rounded-lg focus:outline-none"
+                            />
+                            <input
+                              type="text"
+                              value={newUsername}
+                              onChange={(e) => setNewUsername(e.target.value)}
+                              placeholder="Username unik"
+                              className="px-3 py-2 border border-slate-200 rounded-lg focus:outline-none"
+                            />
+                            <input
+                              type="text"
+                              value={newPassword}
+                              onChange={(e) => setNewPassword(e.target.value)}
+                              placeholder="Password"
+                              className="px-3 py-2 border border-slate-200 rounded-lg focus:outline-none"
+                            />
+                            <div className="flex gap-2">
+                              <select
+                                value={newUserRole}
+                                onChange={(e) => setNewUserRole(e.target.value as 'admin' | 'petugas')}
+                                className="flex-1 px-2.5 py-2 border border-slate-200 rounded-lg bg-white focus:outline-none"
+                              >
+                                <option value="petugas">Petugas</option>
+                                <option value="admin">Admin</option>
+                              </select>
+                              {newUserRole === 'petugas' && (
+                                <select
+                                  value={newUserTeam}
+                                  onChange={(e) => setNewUserTeam(e.target.value)}
+                                  className="flex-1 px-2.5 py-2 border border-slate-200 rounded-lg bg-white focus:outline-none"
+                                >
+                                  {teamsList.map((t) => (
+                                    <option key={t} value={t}>{t}</option>
+                                  ))}
+                                </select>
+                              )}
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setUserError(null);
+                              if (!newName.trim() || !newUsername.trim() || !newPassword.trim()) {
+                                setUserError('Semua kolom data pengguna baru harus diisi.');
+                                return;
+                              }
+                              const exists = usersList.some(user => user.username.toLowerCase() === newUsername.trim().toLowerCase());
+                              if (exists) {
+                                setUserError('Username sudah terpakai.');
+                                return;
+                              }
+                              const newUser: User = {
+                                id: `USR-${Date.now()}`,
+                                name: newName.trim(),
+                                username: newUsername.trim(),
+                                password: newPassword,
+                                role: newUserRole,
+                                team: newUserRole === 'petugas' ? newUserTeam : '',
+                                createdAt: new Date().toISOString().split('T')[0]
+                              };
+                              onUpdateUsers && onUpdateUsers([...usersList, newUser]);
+                              setNewName('');
+                              setNewUsername('');
+                              setNewPassword('');
+                              setUserSuccess('Akun pengguna baru berhasil dibuat.');
+                              setTimeout(() => setUserSuccess(null), 2500);
+                            }}
+                            className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold flex items-center justify-center space-x-1 cursor-pointer transition shadow-xs"
+                          >
+                            <span>Buat Akun Pengguna</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </>
             )}
 
-            {activeSubTab !== 'pwa' && (
+            {activeSubTab !== 'pwa' && activeSubTab !== 'users' && (
               <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
                 <span className="text-[10px] text-slate-400 italic">Konfigurasi disimpan secara lokal di browser Anda.</span>
                 <button
@@ -917,7 +1371,7 @@ export default function SettingsView({ onSaveSettings }: SettingsViewProps) {
                 </div>
               </div>
             </>
-          ) : (
+          ) : activeSubTab === 'pwa' ? (
             // TAB 3: PWA RIGHT SIDEBAR INFO
             <div className="bg-gradient-to-br from-slate-900 to-indigo-950 text-white rounded-2xl p-6 shadow-md relative overflow-hidden space-y-4">
               <div className="absolute right-0 top-0 translate-x-4 -translate-y-4 opacity-5 pointer-events-none">
@@ -942,6 +1396,34 @@ export default function SettingsView({ onSaveSettings }: SettingsViewProps) {
                 <div className="p-3 bg-white/5 border border-white/10 rounded-xl space-y-1">
                   <p className="font-bold text-indigo-300">💾 Jangan Bersihkan Cache Browser</p>
                   <p className="text-[10.5px] text-indigo-200/90">Karena aplikasi ini menggunakan penyimpanan lokal browser (localStorage), jangan jalankan pembersih cache pihak ketiga yang agresif untuk menjamin keutuhan data riwayat alat Anda di ponsel.</p>
+                </div>
+              </div>
+            </div>
+          ) : (
+            // TAB 4: USERS RIGHT SIDEBAR INFO (Petugas & Tim)
+            <div className="bg-gradient-to-br from-indigo-950 to-slate-900 text-white rounded-2xl p-6 shadow-md relative overflow-hidden space-y-4">
+              <div className="absolute right-0 top-0 translate-x-4 -translate-y-4 opacity-5 pointer-events-none">
+                <Users size={200} />
+              </div>
+              <div className="flex items-center space-x-2 text-indigo-300">
+                <Shield className="text-indigo-400" size={16} />
+                <h3 className="text-xs font-extrabold uppercase tracking-wider">Skema Pembagian Alat & Hak Akses</h3>
+              </div>
+              <p className="text-[11px] text-indigo-200 leading-relaxed">
+                Aplikasi LabCalib mengimplementasikan sistem pembagian alat berbasis tim dan alat bersama (shared) yang fleksibel dan aman:
+              </p>
+              <div className="space-y-3.5 text-[11px] text-indigo-100 leading-relaxed">
+                <div className="p-3 bg-white/5 border border-white/10 rounded-xl space-y-1">
+                  <p className="font-bold text-emerald-300">🏢 Alat Bersama (Shared Equipment)</p>
+                  <p className="text-[10.5px] text-indigo-200/90">Alat dengan cakupan &quot;Bersama&quot; dapat discan, dipinjam, dan digunakan oleh petugas dari tim manapun tanpa batasan.</p>
+                </div>
+                <div className="p-3 bg-white/5 border border-white/10 rounded-xl space-y-1">
+                  <p className="font-bold text-indigo-300">👥 Alat Khusus Tim (Dedicated Team Tools)</p>
+                  <p className="text-[10.5px] text-indigo-200/90">Alat yang dikhususkan untuk tim tertentu hanya dapat dioperasikan oleh petugas yang terdaftar di tim tersebut guna menjaga akuntabilitas.</p>
+                </div>
+                <div className="p-3 bg-white/5 border border-white/10 rounded-xl space-y-1">
+                  <p className="font-bold text-amber-300">🛡️ Alur Verifikasi Ganda (Double-Check)</p>
+                  <p className="text-[10.5px] text-indigo-200/90">Ketika petugas selesai menggunakan alat, alat tidak langsung berstatus sehat di dashboard. Alat masuk ke fase &quot;Menunggu Verifikasi&quot; dan harus diperiksa fisik oleh Admin terlebih dahulu sebelum diselesaikan.</p>
                 </div>
               </div>
             </div>

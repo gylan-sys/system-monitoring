@@ -66,6 +66,16 @@ export default function EquipmentView({
   onAddMaintenance,
   onUploadCertificate,
 }: EquipmentViewProps) {
+  const [warningDays, setWarningDays] = useState(() => Number(localStorage.getItem('cfg_warning_days') || '30'));
+
+  React.useEffect(() => {
+    const handleUpdate = () => {
+      setWarningDays(Number(localStorage.getItem('cfg_warning_days') || '30'));
+    };
+    window.addEventListener('lab_settings_updated', handleUpdate);
+    return () => window.removeEventListener('lab_settings_updated', handleUpdate);
+  }, []);
+
   // State for search and filter
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('All');
@@ -229,65 +239,45 @@ export default function EquipmentView({
 
   const downloadExcelTemplate = () => {
     const headers = [
-      'Nama Alat *',
-      'Kategori *',
-      'Tipe/Model *',
-      'Nomor Seri *',
-      'Lokasi *',
-      'Penanggung Jawab *',
-      'Email Penanggung Jawab *',
-      'Interval Kalibrasi (Bulan) *',
-      'Tanggal Kalibrasi Terakhir (YYYY-MM-DD) *',
-      'No. Inventaris',
-      'Titik Kalibrasi (Pisahkan dengan koma)',
-      'Deskripsi Alat'
+      'Nama Alat (Opsional)',
+      'Merek & Tipe Model (Opsional)',
+      'No. Inventaris (Opsional)',
+      'Titik Kalibrasi (Opsional)',
+      'Lokasi Penyimpanan (Opsional)',
+      'Interval Kalibrasi (Bulan) (Opsional)',
+      'Tanggal Kalibrasi Terakhir (YYYY-MM-DD) (Opsional)'
     ];
 
     const sampleData = [
       [
         'Timbangan Analitik Mettler Toledo',
-        'Timbangan',
         'XS204',
-        'MT-XS204-90123',
-        'Laboratorium Formulasi',
-        'Siti Rahma, S.Si.',
-        'siti.rahma@lab.id',
-        '12',
-        '2025-07-10',
         'INV/2026/002',
         '50 g, 100 g, 150 g, 200 g',
-        'Timbangan analitik tingkat ketelitian tinggi hingga 0.1 mg untuk formulasi sampel sensitif.'
+        'Laboratorium Formulasi',
+        '12',
+        '2025-07-10'
       ],
       [
         'pH Meter Digital Ohaus',
-        'pH Meter',
         'Starter 3100',
-        'OH-ST31-44512',
-        'Laboratorium Biokimia',
-        'Budi Santoso, M.Sc.',
-        'budi.santoso@lab.id',
-        '3',
-        '2026-06-10',
         'INV/2025/003',
         'pH 4.01, pH 7.00, pH 10.01',
-        'Alat ukur derajat keasaman larutan sampel biologis dengan kompensasi suhu otomatis.'
+        'Laboratorium Biokimia',
+        '3',
+        '2026-06-10'
       ]
     ];
 
     const ws = XLSX.utils.aoa_to_sheet([headers, ...sampleData]);
     ws['!cols'] = [
       { wch: 35 }, // Nama Alat
-      { wch: 15 }, // Kategori
-      { wch: 15 }, // Tipe/Model
-      { wch: 18 }, // Nomor Seri
-      { wch: 25 }, // Lokasi
-      { wch: 20 }, // Penanggung Jawab
-      { wch: 25 }, // Email Penanggung Jawab
-      { wch: 25 }, // Interval Kalibrasi (Bulan)
-      { wch: 35 }, // Tanggal Kalibrasi Terakhir (YYYY-MM-DD)
-      { wch: 18 }, // No. Inventaris
+      { wch: 25 }, // Merek & Tipe Model
+      { wch: 20 }, // No. Inventaris
       { wch: 35 }, // Titik Kalibrasi
-      { wch: 40 }  // Deskripsi Alat
+      { wch: 25 }, // Lokasi Penyimpanan
+      { wch: 25 }, // Interval Kalibrasi (Bulan)
+      { wch: 35 }  // Tanggal Kalibrasi Terakhir (YYYY-MM-DD)
     ];
 
     const wb = XLSX.utils.book_new();
@@ -333,32 +323,15 @@ export default function EquipmentView({
             continue;
           }
 
-          const name = row[0]?.toString().trim() || '';
-          const category = row[1]?.toString().trim() || 'Lain-lain';
-          const model = row[2]?.toString().trim() || '';
-          const serialNumber = row[3]?.toString().trim() || '';
-          const location = row[4]?.toString().trim() || '';
-          const responsiblePerson = row[5]?.toString().trim() || '';
-          const responsibleEmail = row[6]?.toString().trim() || '';
-          const intervalRaw = row[7];
-          const lastCalibDateRaw = row[8];
-          const inventoryNumber = row[9]?.toString().trim() || '';
-          const calibrationPoints = row[10]?.toString().trim() || '';
-          const description = row[11]?.toString().trim() || '';
+          const name = row[0]?.toString().trim() || 'Alat Tanpa Nama';
+          const model = row[1]?.toString().trim() || '-';
+          const inventoryNumber = row[2]?.toString().trim() || '';
+          const calibrationPoints = row[3]?.toString().trim() || '-';
+          const location = row[4]?.toString().trim() || 'Laboratorium Pusat';
+          const intervalRaw = row[5];
+          const lastCalibDateRaw = row[6];
 
           const rowNum = i + 1;
-          if (!name) {
-            importErrors.push(`Baris ${rowNum}: Nama Alat kosong.`);
-            continue;
-          }
-          if (!model) {
-            importErrors.push(`Baris ${rowNum}: Tipe/Model kosong.`);
-            continue;
-          }
-          if (!serialNumber) {
-            importErrors.push(`Baris ${rowNum}: Nomor Seri kosong.`);
-            continue;
-          }
 
           let calibrationInterval = parseInt(intervalRaw, 10);
           if (isNaN(calibrationInterval) || calibrationInterval <= 0) {
@@ -386,8 +359,7 @@ export default function EquipmentView({
                   const d = String(dateObj.getDate()).padStart(2, '0');
                   lastCalibrationDate = `${y}-${m}-${d}`;
                 } else {
-                  importErrors.push(`Baris ${rowNum}: Format Tanggal Kalibrasi Terakhir "${dateStr}" tidak valid (gunakan YYYY-MM-DD).`);
-                  continue;
+                  lastCalibrationDate = TODAY_STR;
                 }
               }
             }
@@ -405,20 +377,20 @@ export default function EquipmentView({
 
           parsedEquipments.push({
             name,
-            category,
+            category: 'Umum',
             model,
-            serialNumber,
-            location: location || 'Laboratorium Utama',
-            responsiblePerson: responsiblePerson || 'Staff Laboratorium',
-            responsibleEmail: responsibleEmail || 'admin@lab.id',
+            serialNumber: '-',
+            location,
+            responsiblePerson: '-',
+            responsibleEmail: '-',
             calibrationInterval,
             lastCalibrationDate,
             nextCalibrationDate,
-            description: description || 'Alat diimport secara massal.',
+            description: '-',
             certificateName: null,
             certificateData: null,
             certificateUploadDate: null,
-            inventoryNumber,
+            inventoryNumber: inventoryNumber || `INV/${lastCalibrationDate.split('-')[0] || '2026'}/${Math.floor(Math.random() * 900 + 100)}`,
             calibrationPoints
           });
         }
@@ -476,41 +448,37 @@ export default function EquipmentView({
   // Handle Equipment Submit
   const handleAddEqSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newName || !newModel || !newSerialNumber) {
-      setFormError('Mohon isi nama, tipe model, dan nomor seri alat!');
-      return;
-    }
-
-    const finalCategory = newCategory === 'CUSTOM' ? newCategoryCustom.trim() : newCategory;
-    if (!finalCategory) {
-      setFormError('Mohon isi atau pilih kategori alat!');
-      return;
-    }
-
     setFormError(null);
 
+    const finalName = newName.trim() || 'Alat Tanpa Nama';
+    const finalModel = newModel.trim() || '-';
+    const finalInterval = Number(newInterval) || 12;
+    const finalLastCalibDate = newLastCalibDate || new Date().toISOString().split('T')[0];
+    const finalInventoryNumber = newInventoryNumber.trim() || `INV/${finalLastCalibDate.split('-')[0] || '2026'}/${Math.floor(Math.random() * 900 + 100)}`;
+    const finalCalibrationPoints = newCalibrationPoints.trim() || '-';
+
     // Calculate next calibration date automatically
-    const lastDate = new Date(newLastCalibDate);
-    lastDate.setMonth(lastDate.getMonth() + Number(newInterval));
+    const lastDate = new Date(finalLastCalibDate);
+    lastDate.setMonth(lastDate.getMonth() + finalInterval);
     const nextCalibStr = lastDate.toISOString().split('T')[0];
 
     onAddEquipment({
-      name: newName,
-      category: finalCategory,
-      model: newModel,
-      serialNumber: newSerialNumber,
+      name: finalName,
+      category: 'Umum',
+      model: finalModel,
+      serialNumber: '-',
       location: newLocation || 'Laboratorium Pusat',
-      responsiblePerson: newPIC || 'Petugas Laboratorium',
-      responsibleEmail: newPICEmail || 'lab@lab.id',
-      calibrationInterval: Number(newInterval),
-      lastCalibrationDate: newLastCalibDate,
+      responsiblePerson: '-',
+      responsibleEmail: '-',
+      calibrationInterval: finalInterval,
+      lastCalibrationDate: finalLastCalibDate,
       nextCalibrationDate: nextCalibStr,
       certificateName: uploadedFile ? uploadedFile.name : null,
       certificateData: uploadedFile ? 'MOCK_UPLOADED_DATA' : null,
       certificateUploadDate: uploadedFile ? '2026-07-14' : null,
-      description: newDescription,
-      inventoryNumber: newInventoryNumber || `INV/${newLastCalibDate.split('-')[0] || '2026'}/${newSerialNumber.slice(-3).toUpperCase() || 'NEW'}`,
-      calibrationPoints: newCalibrationPoints || 'Default Setpoint',
+      description: '-',
+      inventoryNumber: finalInventoryNumber,
+      calibrationPoints: finalCalibrationPoints,
     });
 
     // Reset inputs
@@ -534,38 +502,34 @@ export default function EquipmentView({
   const handleEditEqSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeEq) return;
-    if (!editName || !editModel || !editSerialNumber) {
-      setFormError('Mohon isi nama, tipe model, dan nomor seri alat!');
-      return;
-    }
-
-    const finalCategory = editCategory === 'CUSTOM' ? editCategoryCustom.trim() : editCategory;
-    if (!finalCategory) {
-      setFormError('Mohon isi atau pilih kategori alat!');
-      return;
-    }
-
     setFormError(null);
 
+    const finalName = editName.trim() || 'Alat Tanpa Nama';
+    const finalModel = editModel.trim() || '-';
+    const finalInterval = Number(editInterval) || 12;
+    const finalLastCalibDate = editLastCalibDate || new Date().toISOString().split('T')[0];
+    const finalInventoryNumber = editInventoryNumber.trim() || activeEq.inventoryNumber || '-';
+    const finalCalibrationPoints = editCalibrationPoints.trim() || '-';
+
     // Calculate next calibration date automatically
-    const lastDate = new Date(editLastCalibDate);
-    lastDate.setMonth(lastDate.getMonth() + Number(editInterval));
+    const lastDate = new Date(finalLastCalibDate);
+    lastDate.setMonth(lastDate.getMonth() + finalInterval);
     const nextCalibStr = lastDate.toISOString().split('T')[0];
 
     onUpdateEquipment(activeEq.id, {
-      name: editName,
-      category: finalCategory,
-      model: editModel,
-      serialNumber: editSerialNumber,
+      name: finalName,
+      category: activeEq.category || 'Umum',
+      model: finalModel,
+      serialNumber: activeEq.serialNumber || '-',
       location: editLocation || 'Laboratorium Pusat',
-      responsiblePerson: editPIC || 'Petugas Laboratorium',
-      responsibleEmail: editPICEmail || 'lab@lab.id',
-      calibrationInterval: Number(editInterval),
-      lastCalibrationDate: editLastCalibDate,
+      responsiblePerson: activeEq.responsiblePerson || '-',
+      responsibleEmail: activeEq.responsibleEmail || '-',
+      calibrationInterval: finalInterval,
+      lastCalibrationDate: finalLastCalibDate,
       nextCalibrationDate: nextCalibStr,
-      description: editDescription,
-      inventoryNumber: editInventoryNumber,
-      calibrationPoints: editCalibrationPoints,
+      description: activeEq.description || '-',
+      inventoryNumber: finalInventoryNumber,
+      calibrationPoints: finalCalibrationPoints,
       certificateName: activeEq.certificateName,
       certificateData: activeEq.certificateData,
       certificateUploadDate: activeEq.certificateUploadDate,
@@ -849,7 +813,7 @@ export default function EquipmentView({
                   <div className="mt-4 space-y-2 border-t border-slate-50 pt-3">
                     <div className="flex items-center text-xs text-slate-500">
                       <MapPin size={14} className="mr-1.5 text-slate-400" />
-                      <span>{item.location}</span>
+                      <span className="truncate">{item.location}</span>
                     </div>
                     <div className="flex items-center text-xs text-slate-500">
                       <Calendar size={14} className="mr-1.5 text-slate-400" />
@@ -865,7 +829,7 @@ export default function EquipmentView({
                     {item.responsiblePerson}
                   </span>
                   {item.status !== 'calibrating' && item.status !== 'maintenance' && (
-                    <span className={`text-[10px] font-bold ${daysLeft < 0 ? 'text-rose-600' : daysLeft <= 30 ? 'text-amber-600' : 'text-slate-400'}`}>
+                    <span className={`text-[10px] font-bold ${daysLeft < 0 ? 'text-rose-600' : daysLeft <= warningDays ? 'text-amber-600' : 'text-slate-400'}`}>
                       {daysLeft < 0 ? 'Kritis!' : `${daysLeft} hari lagi`}
                     </span>
                   )}
@@ -968,7 +932,7 @@ export default function EquipmentView({
                             {statusText}
                           </span>
                           {item.status !== 'calibrating' && item.status !== 'maintenance' && (
-                            <span className={`text-[10px] font-bold ${daysLeft < 0 ? 'text-rose-600' : daysLeft <= 30 ? 'text-amber-600' : 'text-slate-400'}`}>
+                            <span className={`text-[10px] font-bold ${daysLeft < 0 ? 'text-rose-600' : daysLeft <= warningDays ? 'text-amber-600' : 'text-slate-400'}`}>
                               {daysLeft < 0 ? 'Kritis!' : `${daysLeft} hari lagi`}
                             </span>
                           )}
@@ -1477,10 +1441,9 @@ export default function EquipmentView({
                   
                   <div className="grid grid-cols-2 gap-4">
                     <div className="col-span-2 space-y-1">
-                      <label className="text-xs font-bold text-slate-700">Nama Alat Sampling *</label>
+                      <label className="text-xs font-bold text-slate-700">Nama Alat Sampling (Opsional)</label>
                       <input
                         type="text"
-                        required
                         placeholder="e.g., pH Meter Digital Ohaus, Mikropipet 100uL"
                         value={newName}
                         onChange={(e) => setNewName(e.target.value)}
@@ -1489,45 +1452,9 @@ export default function EquipmentView({
                     </div>
 
                     <div className="space-y-1">
-                      <label className="text-xs font-bold text-slate-700">Kategori Alat</label>
-                      <select
-                        value={newCategory}
-                        onChange={(e) => {
-                          setNewCategory(e.target.value);
-                          if (e.target.value !== 'CUSTOM') {
-                            setNewCategoryCustom('');
-                          }
-                        }}
-                        className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 bg-white"
-                      >
-                        {allKnownCategories.map(cat => (
-                          <option key={cat} value={cat}>{cat}</option>
-                        ))}
-                        <option value="CUSTOM">+ Tambah Kategori Baru...</option>
-                      </select>
-                    </div>
-
-                    {newCategory === 'CUSTOM' && (
-                      <div className="col-span-2 space-y-1 bg-indigo-50/50 p-3 rounded-lg border border-indigo-100/60 animate-in fade-in duration-200">
-                        <label className="text-xs font-bold text-indigo-700 flex items-center">
-                          <Plus size={14} className="mr-1" /> Tulis Kategori Kustom Baru *
-                        </label>
-                        <input
-                          type="text"
-                          required
-                          placeholder="e.g., Oven, Mikroskop, Desikator"
-                          value={newCategoryCustom}
-                          onChange={(e) => setNewCategoryCustom(e.target.value)}
-                          className="w-full px-3 py-2 border border-indigo-200 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 bg-white"
-                        />
-                      </div>
-                    )}
-
-                    <div className="space-y-1">
-                      <label className="text-xs font-bold text-slate-700">Merek & Tipe Model *</label>
+                      <label className="text-xs font-bold text-slate-700">Merek & Tipe Model (Opsional)</label>
                       <input
                         type="text"
-                        required
                         placeholder="e.g., Starter 3100"
                         value={newModel}
                         onChange={(e) => setNewModel(e.target.value)}
@@ -1536,22 +1463,9 @@ export default function EquipmentView({
                     </div>
 
                     <div className="space-y-1">
-                      <label className="text-xs font-bold text-slate-700">Nomor Seri Fisik (S/N) *</label>
+                      <label className="text-xs font-bold text-slate-700">No. Inventaris Alat (Opsional)</label>
                       <input
                         type="text"
-                        required
-                        placeholder="e.g., SN-84920"
-                        value={newSerialNumber}
-                        onChange={(e) => setNewSerialNumber(e.target.value)}
-                        className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500"
-                      />
-                    </div>
-
-                    <div className="space-y-1">
-                      <label className="text-xs font-bold text-slate-700">No. Inventaris Alat *</label>
-                      <input
-                        type="text"
-                        required
                         placeholder="e.g., INV/2026/007"
                         value={newInventoryNumber}
                         onChange={(e) => setNewInventoryNumber(e.target.value)}
@@ -1560,10 +1474,9 @@ export default function EquipmentView({
                     </div>
 
                     <div className="space-y-1">
-                      <label className="text-xs font-bold text-slate-700">Titik Kalibrasi *</label>
+                      <label className="text-xs font-bold text-slate-700">Titik Kalibrasi (Opsional)</label>
                       <input
                         type="text"
-                        required
                         placeholder="e.g., pH 4.01, 7.00, 10.01 atau 100g, 500g"
                         value={newCalibrationPoints}
                         onChange={(e) => setNewCalibrationPoints(e.target.value)}
@@ -1572,7 +1485,7 @@ export default function EquipmentView({
                     </div>
 
                     <div className="space-y-1">
-                      <label className="text-xs font-bold text-slate-700">Lokasi Penyimpanan</label>
+                      <label className="text-xs font-bold text-slate-700">Lokasi Penyimpanan (Opsional)</label>
                       <input
                         type="text"
                         placeholder="e.g., Lab Mikrobiologi"
@@ -1583,29 +1496,7 @@ export default function EquipmentView({
                     </div>
 
                     <div className="space-y-1">
-                      <label className="text-xs font-bold text-slate-700">Nama Penanggung Jawab (PJ) *</label>
-                      <input
-                        type="text"
-                        placeholder="e.g., Siti Rahma, S.Si."
-                        value={newPIC}
-                        onChange={(e) => setNewPIC(e.target.value)}
-                        className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500"
-                      />
-                    </div>
-
-                    <div className="space-y-1">
-                      <label className="text-xs font-bold text-slate-700">Email Penanggung Jawab *</label>
-                      <input
-                        type="email"
-                        placeholder="e.g., siti@lab.id"
-                        value={newPICEmail}
-                        onChange={(e) => setNewPICEmail(e.target.value)}
-                        className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500"
-                      />
-                    </div>
-
-                    <div className="space-y-1">
-                      <label className="text-xs font-bold text-slate-700">Interval Kalibrasi (Bulan)</label>
+                      <label className="text-xs font-bold text-slate-700">Interval Kalibrasi (Bulan) (Opsional)</label>
                       <input
                         type="number"
                         min="1"
@@ -1617,7 +1508,7 @@ export default function EquipmentView({
                     </div>
 
                     <div className="space-y-1">
-                      <label className="text-xs font-bold text-slate-700">Tanggal Kalibrasi Terakhir</label>
+                      <label className="text-xs font-bold text-slate-700">Tanggal Kalibrasi Terakhir (Opsional)</label>
                       <input
                         type="date"
                         value={newLastCalibDate}
@@ -1625,17 +1516,6 @@ export default function EquipmentView({
                         className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500"
                       />
                     </div>
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold text-slate-700">Keterangan / Deskripsi Alat</label>
-                    <textarea
-                      rows={2}
-                      placeholder="Tuliskan spesifikasi detail alat atau kegunaan spesifik di lab..."
-                      value={newDescription}
-                      onChange={(e) => setNewDescription(e.target.value)}
-                      className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500"
-                    />
                   </div>
 
                   {/* Simulated Certificate Attachment */}
@@ -1698,8 +1578,8 @@ export default function EquipmentView({
                       </p>
                       <ul className="list-disc pl-4 space-y-1 text-slate-700 text-[11px]">
                         <li>Unduh template Excel resmi di bawah ini terlebih dahulu agar struktur kolom sesuai.</li>
-                        <li>Kolom dengan tanda bintang (<strong className="text-rose-600">*</strong>) wajib diisi lengkap.</li>
-                        <li>Tanggal kalibrasi terakhir diisi dengan format <strong className="text-slate-900 font-semibold">YYYY-MM-DD</strong> (misal: 2026-01-15).</li>
+                        <li>Semua kolom bersifat opsional dan dapat dikosongkan (sistem akan otomatis memberikan nilai default).</li>
+                        <li>Tanggal kalibrasi terakhir jika diisi sebaiknya menggunakan format <strong className="text-slate-900 font-semibold">YYYY-MM-DD</strong> (misal: 2026-01-15).</li>
                         <li>Sistem otomatis memproses ribuan data secara cepat di sisi browser secara aman.</li>
                       </ul>
                     </div>
@@ -1798,10 +1678,9 @@ export default function EquipmentView({
                 
                 <div className="grid grid-cols-2 gap-4">
                   <div className="col-span-2 space-y-1">
-                    <label className="text-xs font-bold text-slate-700">Nama Alat Sampling *</label>
+                    <label className="text-xs font-bold text-slate-700">Nama Alat Sampling (Opsional)</label>
                     <input
                       type="text"
-                      required
                       placeholder="e.g., pH Meter Digital Ohaus, Mikropipet 100uL"
                       value={editName}
                       onChange={(e) => setEditName(e.target.value)}
@@ -1810,45 +1689,9 @@ export default function EquipmentView({
                   </div>
 
                   <div className="space-y-1">
-                    <label className="text-xs font-bold text-slate-700">Kategori Alat</label>
-                    <select
-                      value={editCategory}
-                      onChange={(e) => {
-                        setEditCategory(e.target.value);
-                        if (e.target.value !== 'CUSTOM') {
-                          setEditCategoryCustom('');
-                        }
-                      }}
-                      className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 bg-white"
-                    >
-                      {allKnownCategories.map(cat => (
-                        <option key={cat} value={cat}>{cat}</option>
-                      ))}
-                      <option value="CUSTOM">+ Tambah Kategori Baru...</option>
-                    </select>
-                  </div>
-
-                  {editCategory === 'CUSTOM' && (
-                    <div className="col-span-2 space-y-1 bg-indigo-50/50 p-3 rounded-lg border border-indigo-100/60 animate-in fade-in duration-200">
-                      <label className="text-xs font-bold text-indigo-700 flex items-center">
-                        <Plus size={14} className="mr-1" /> Tulis Kategori Kustom Baru *
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        placeholder="e.g., Oven, Mikroskop, Desikator"
-                        value={editCategoryCustom}
-                        onChange={(e) => setEditCategoryCustom(e.target.value)}
-                        className="w-full px-3 py-2 border border-indigo-200 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 bg-white"
-                      />
-                    </div>
-                  )}
-
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold text-slate-700">Merek & Tipe Model *</label>
+                    <label className="text-xs font-bold text-slate-700">Merek & Tipe Model (Opsional)</label>
                     <input
                       type="text"
-                      required
                       placeholder="e.g., Starter 3100"
                       value={editModel}
                       onChange={(e) => setEditModel(e.target.value)}
@@ -1857,22 +1700,9 @@ export default function EquipmentView({
                   </div>
 
                   <div className="space-y-1">
-                    <label className="text-xs font-bold text-slate-700">Nomor Seri Fisik (S/N) *</label>
+                    <label className="text-xs font-bold text-slate-700">No. Inventaris Alat (Opsional)</label>
                     <input
                       type="text"
-                      required
-                      placeholder="e.g., SN-84920"
-                      value={editSerialNumber}
-                      onChange={(e) => setEditSerialNumber(e.target.value)}
-                      className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500"
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold text-slate-700">No. Inventaris Alat *</label>
-                    <input
-                      type="text"
-                      required
                       placeholder="e.g., INV/2026/007"
                       value={editInventoryNumber}
                       onChange={(e) => setEditInventoryNumber(e.target.value)}
@@ -1881,10 +1711,9 @@ export default function EquipmentView({
                   </div>
 
                   <div className="space-y-1">
-                    <label className="text-xs font-bold text-slate-700">Titik Kalibrasi *</label>
+                    <label className="text-xs font-bold text-slate-700">Titik Kalibrasi (Opsional)</label>
                     <input
                       type="text"
-                      required
                       placeholder="e.g., pH 4.01, 7.00, 10.01 atau 100g, 500g"
                       value={editCalibrationPoints}
                       onChange={(e) => setEditCalibrationPoints(e.target.value)}
@@ -1893,7 +1722,7 @@ export default function EquipmentView({
                   </div>
 
                   <div className="space-y-1">
-                    <label className="text-xs font-bold text-slate-700">Lokasi Penyimpanan</label>
+                    <label className="text-xs font-bold text-slate-700">Lokasi Penyimpanan (Opsional)</label>
                     <input
                       type="text"
                       placeholder="e.g., Lab Mikrobiologi"
@@ -1904,29 +1733,7 @@ export default function EquipmentView({
                   </div>
 
                   <div className="space-y-1">
-                    <label className="text-xs font-bold text-slate-700">Nama Penanggung Jawab (PJ) *</label>
-                    <input
-                      type="text"
-                      placeholder="e.g., Siti Rahma, S.Si."
-                      value={editPIC}
-                      onChange={(e) => setEditPIC(e.target.value)}
-                      className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500"
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold text-slate-700">Email Penanggung Jawab *</label>
-                    <input
-                      type="email"
-                      placeholder="e.g., siti@lab.id"
-                      value={editPICEmail}
-                      onChange={(e) => setEditPICEmail(e.target.value)}
-                      className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500"
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold text-slate-700">Interval Kalibrasi (Bulan)</label>
+                    <label className="text-xs font-bold text-slate-700">Interval Kalibrasi (Bulan) (Opsional)</label>
                     <input
                       type="number"
                       min="1"
@@ -1938,7 +1745,7 @@ export default function EquipmentView({
                   </div>
 
                   <div className="space-y-1">
-                    <label className="text-xs font-bold text-slate-700">Tanggal Kalibrasi Terakhir</label>
+                    <label className="text-xs font-bold text-slate-700">Tanggal Kalibrasi Terakhir (Opsional)</label>
                     <input
                       type="date"
                       value={editLastCalibDate}
@@ -1947,7 +1754,7 @@ export default function EquipmentView({
                     />
                   </div>
 
-                  <div className="space-y-1">
+                  <div className="space-y-1 col-span-2">
                     <label className="text-xs font-bold text-slate-700">Status Operasional Alat</label>
                     <select
                       value={editStatus}
@@ -1961,17 +1768,6 @@ export default function EquipmentView({
                       <option value="maintenance">🛠️ Maintenance (Dalam Pemeliharaan)</option>
                     </select>
                   </div>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-700">Keterangan / Deskripsi Alat</label>
-                  <textarea
-                    rows={2}
-                    placeholder="Tuliskan spesifikasi detail alat atau kegunaan spesifik di lab..."
-                    value={editDescription}
-                    onChange={(e) => setEditDescription(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500"
-                  />
                 </div>
 
                 <div className="pt-4 flex justify-end space-x-2">

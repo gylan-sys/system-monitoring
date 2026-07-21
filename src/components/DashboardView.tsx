@@ -46,6 +46,16 @@ export default function DashboardView({
   onSelectEquipment,
   onMarkAllNotificationsRead,
 }: DashboardViewProps) {
+  const [warningDays, setWarningDays] = React.useState(() => Number(localStorage.getItem('cfg_warning_days') || '30'));
+
+  React.useEffect(() => {
+    const handleUpdate = () => {
+      setWarningDays(Number(localStorage.getItem('cfg_warning_days') || '30'));
+    };
+    window.addEventListener('lab_settings_updated', handleUpdate);
+    return () => window.removeEventListener('lab_settings_updated', handleUpdate);
+  }, []);
+
   // Statistics calculations
   const totalCount = equipment.length;
   const validCount = equipment.filter(e => e.status === 'valid').length;
@@ -173,7 +183,7 @@ export default function DashboardView({
           </div>
           <div className="mt-4">
             <h3 className="text-2xl font-bold text-amber-600">{warningCount}</h3>
-            <p className="text-xs text-amber-500 mt-1">&lt; 30 hari lagi</p>
+            <p className="text-xs text-amber-500 mt-1">&lt; {warningDays} hari lagi</p>
           </div>
         </motion.div>
 
@@ -262,7 +272,7 @@ export default function DashboardView({
                 if (daysLeft < 0) {
                   urgencyColor = 'bg-rose-100 text-rose-800 border-rose-200';
                   indicatorColor = 'bg-rose-500';
-                } else if (daysLeft <= 30) {
+                } else if (daysLeft <= warningDays) {
                   urgencyColor = 'bg-amber-100 text-amber-800 border-amber-200';
                   indicatorColor = 'bg-amber-500';
                 }

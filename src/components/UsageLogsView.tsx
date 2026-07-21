@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Play, 
@@ -17,9 +17,12 @@ import {
   Plus, 
   Check, 
   X,
-  AlertCircle
+  AlertCircle,
+  ShieldCheck,
+  FileText,
+  AlertTriangle
 } from 'lucide-react';
-import { Equipment, UsageLog } from '../types';
+import { Equipment, UsageLog, User as SystemUser } from '../types';
 import { formatDateIndo } from '../utils/helpers';
 
 interface UsageLogsViewProps {
@@ -27,6 +30,8 @@ interface UsageLogsViewProps {
   equipmentList: Equipment[];
   onStartUsage: (eqId: string, operator: string, purpose: string, notes: string) => void;
   onEndUsage: (logId: string, notes: string) => void;
+  onVerifyUsage?: (logId: string, condition: 'sehat' | 'kendala', verificationNotes: string) => void;
+  currentUser?: SystemUser | null;
 }
 
 export default function UsageLogsView({
@@ -34,11 +39,18 @@ export default function UsageLogsView({
   equipmentList,
   onStartUsage,
   onEndUsage,
+  onVerifyUsage,
+  currentUser,
 }: UsageLogsViewProps) {
   // Search and display states
   const [search, setSearch] = useState('');
   const [showStartForm, setShowStartForm] = useState(false);
   const [showEndFormId, setShowEndFormId] = useState<string | null>(null);
+
+  // Verification dialog states
+  const [showVerifyFormId, setShowVerifyFormId] = useState<string | null>(null);
+  const [verifyCondition, setVerifyCondition] = useState<'sehat' | 'kendala'>('sehat');
+  const [verifyNotes, setVerifyNotes] = useState('');
 
   // Form input states (Start Sesi)
   const [selectedEqId, setSelectedEqId] = useState('');
@@ -51,8 +63,16 @@ export default function UsageLogsView({
   // Form input states (Selesai Sesi)
   const [endNotes, setEndNotes] = useState('');
 
+  // Auto-prefill operator name when starting session
+  useEffect(() => {
+    if (showStartForm && currentUser) {
+      setOperator(currentUser.name);
+    }
+  }, [showStartForm, currentUser]);
+
   // Lists
   const activeLogs = usageLogs.filter(log => log.status === 'Sedang Digunakan');
+  const pendingVerificationLogs = usageLogs.filter(log => log.status === 'Menunggu Verifikasi');
   const pastLogs = usageLogs.filter(log => log.status === 'Selesai');
 
   // Filter logs based on search (including by inventory number)
@@ -229,6 +249,151 @@ export default function UsageLogsView({
           )}
         </div>
 
+        {/* Pending Verification Section */}
+        {pendingVerificationLogs.length > 0 && (
+          <div className="space-y-3 animate-in fade-in slide-in-from-top-1 duration-300">
+            <div className="flex items-center space-x-2">
+              <ShieldCheck className="text-amber-500 animate-pulse" size={18} />
+              <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wider">
+                Menunggu Verifikasi Pengembalian Alat ({pendingVerificationLogs.length})
+              </h2>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {pendingVerificationLogs.map((log) => {
+                const eqItem = equipmentList.find(e => e.id === log.equipmentId);
+                const isVerifying = showVerifyFormId === log.id;
+
+                return (
+                  <div key={log.id} className="bg-amber-50/40 border border-amber-200/60 rounded-xl p-5 flex flex-col justify-between hover:shadow-xs transition">
+                    <div className="space-y-3">
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <span className="text-[9px] font-bold bg-amber-100 text-amber-800 px-2 py-0.5 rounded uppercase font-mono">
+                            No. Inv: {eqItem?.inventoryNumber || log.equipmentId}
+                          </span>
+                          <h4 className="text-sm font-bold text-slate-800 mt-1.5 line-clamp-1">{log.equipmentName}</h4>
+                        </div>
+                        <span className="bg-amber-500 text-white text-[9px] px-2 py-0.5 rounded-full font-semibold">
+                          Menunggu Verifikasi
+                        </span>
+                      </div>
+
+                      <div className="space-y-1 text-xs text-slate-600">
+                        <p className="flex items-center">
+                          <User size={13} className="mr-1.5 text-slate-400" />
+                          Operator: <span className="font-semibold text-slate-800 ml-1">{log.operator}</span>
+                        </p>
+                        <p className="flex items-center">
+                          <Clock size={13} className="mr-1.5 text-slate-400" />
+                          Selesai: <span className="font-medium text-slate-800 ml-1">{log.endTime} WIB ({formatDateIndo(log.endDate || '')})</span>
+                        </p>
+                        <p className="text-[11px] text-amber-800 font-medium italic mt-1 bg-white/70 p-2 rounded-md border border-amber-100/40">
+                          Catatan Petugas: "{log.notes}"
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Admin Verification Action */}
+                    <div className="mt-4 pt-4 border-t border-amber-200/60">
+                      {currentUser?.role === 'admin' ? (
+                        isVerifying ? (
+                          <div className="space-y-3">
+                            <div className="space-y-1">
+                              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Kondisi Alat setelah Diperiksa</label>
+                              <div className="flex gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => setVerifyCondition('sehat')}
+                                  className={`flex-1 py-1 px-2 rounded-lg text-xs font-bold border transition cursor-pointer text-center ${
+                                    verifyCondition === 'sehat'
+                                      ? 'bg-emerald-50 border-emerald-500 text-emerald-700'
+                                      : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                                  }`}
+                                >
+                                  Sehat & Bersih
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setVerifyCondition('kendala')}
+                                  className={`flex-1 py-1 px-2 rounded-lg text-xs font-bold border transition cursor-pointer text-center ${
+                                    verifyCondition === 'kendala'
+                                      ? 'bg-rose-50 border-rose-500 text-rose-700'
+                                      : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                                  }`}
+                                >
+                                  Ada Kendala / Rusak
+                                </button>
+                              </div>
+                            </div>
+
+                            <div className="space-y-1">
+                              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Catatan Pemeriksaan Admin</label>
+                              <input
+                                type="text"
+                                placeholder="e.g. Alat diterima dalam kondisi lengkap, bersih, siap pakai."
+                                value={verifyNotes}
+                                onChange={(e) => setVerifyNotes(e.target.value)}
+                                className="w-full px-2 py-1.5 border border-slate-200 rounded text-xs bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                              />
+                            </div>
+
+                            <div className="flex justify-end gap-1 pt-1">
+                              <button
+                                type="button"
+                                onClick={() => setShowVerifyFormId(null)}
+                                className="px-2 py-1 text-slate-500 hover:bg-slate-100 text-[10px] font-semibold rounded cursor-pointer"
+                              >
+                                Batal
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (onVerifyUsage) {
+                                    onVerifyUsage(
+                                      log.id, 
+                                      verifyCondition, 
+                                      verifyNotes || (verifyCondition === 'sehat' ? 'Alat diverifikasi bersih dan berfungsi normal.' : 'Alat diverifikasi memiliki kendala dilaporkan.')
+                                    );
+                                    setShowVerifyFormId(null);
+                                    setVerifyNotes('');
+                                    setVerifyCondition('sehat');
+                                  }
+                                }}
+                                className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold rounded flex items-center space-x-1 cursor-pointer"
+                              >
+                                <Check size={12} />
+                                <span>Simpan Verifikasi</span>
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowVerifyFormId(log.id);
+                              setVerifyCondition('sehat');
+                              setVerifyNotes('Alat diperiksa dan diterima kembali dalam kondisi prima.');
+                            }}
+                            className="w-full bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold py-2 rounded-lg flex items-center justify-center space-x-1 transition cursor-pointer"
+                          >
+                            <ShieldCheck size={14} />
+                            <span>Verifikasi Pengembalian</span>
+                          </button>
+                        )
+                      ) : (
+                        <div className="p-2 bg-slate-50 rounded-lg text-slate-400 text-center text-[10.5px] italic border border-slate-100">
+                          Menunggu pemeriksaan fisik oleh Administrator
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* History Logbook */}
         <div className="space-y-3 bg-white p-5 rounded-xl border border-slate-100 shadow-xs">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
@@ -380,9 +545,16 @@ export default function UsageLogsView({
                       .filter(eq => eq.status !== 'calibrating') // Don't list if calibrating
                       .map(eq => {
                         const inUse = activeLogs.some(log => log.equipmentId === eq.id);
+                        const pendingVerify = pendingVerificationLogs.some(log => log.equipmentId === eq.id);
+                        const isDisabled = inUse || pendingVerify;
+                        const statusLabel = inUse 
+                          ? '(Sedang Digunakan)' 
+                          : pendingVerify 
+                            ? '(Menunggu Verifikasi Admin)' 
+                            : '';
                         return (
-                          <option key={eq.id} value={eq.id} disabled={inUse}>
-                            {eq.name} ({eq.inventoryNumber || eq.id}) {inUse ? '(Sedang Digunakan)' : ''}
+                          <option key={eq.id} value={eq.id} disabled={isDisabled}>
+                            {eq.name} ({eq.inventoryNumber || eq.id}) {statusLabel}
                           </option>
                         );
                       })

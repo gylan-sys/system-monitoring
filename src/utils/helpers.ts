@@ -22,16 +22,18 @@ export function getDaysRemaining(targetDateStr: string, baseDateStr: string = '2
 export function determineStatus(
   nextCalibDateStr: string,
   baseDateStr: string = '2026-07-14',
-  currentStatus?: CalibrationStatus
+  currentStatus?: CalibrationStatus,
+  warningDays?: number
 ): CalibrationStatus {
   if (currentStatus === 'calibrating') return 'calibrating';
   if (currentStatus === 'maintenance') return 'maintenance';
   
   const daysRemaining = getDaysRemaining(nextCalibDateStr, baseDateStr);
+  const limit = warningDays !== undefined ? warningDays : Number(localStorage.getItem('cfg_warning_days') || '30');
   
   if (daysRemaining < 0) {
     return 'expired';
-  } else if (daysRemaining <= 30) {
+  } else if (daysRemaining <= limit) {
     return 'warning';
   } else {
     return 'valid';

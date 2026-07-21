@@ -19,23 +19,34 @@ import {
   Smartphone,
   Sparkles,
   Zap,
-  RotateCcw
+  RotateCcw,
+  Sliders,
+  Sun,
+  Maximize
 } from 'lucide-react';
-import { Equipment } from '../types';
+import { Equipment, UsageLog, User as SystemUser } from '../types';
 import { formatDateIndo, getDaysRemaining } from '../utils/helpers';
 
 interface QRScanViewProps {
   equipmentList: Equipment[];
   onSelectEquipment: (id: string) => void;
   onNavigate: (tab: string) => void;
+  currentUser?: SystemUser | null;
+  onStartUsage?: (eqId: string, operator: string, purpose: string, notes: string) => void;
+  onEndUsage?: (logId: string, notes: string) => void;
+  usageLogs?: UsageLog[];
 }
 
 export default function QRScanView({
   equipmentList,
   onSelectEquipment,
-  onNavigate
+  onNavigate,
+  currentUser,
+  onStartUsage,
+  onEndUsage,
+  usageLogs = []
 }: QRScanViewProps) {
-  const [useCamera, setUseCamera] = useState(false);
+  const [useCamera, setUseCamera] = useState(true);
   const [selectedSimId, setSelectedSimId] = useState('');
   const [scanning, setScanning] = useState(false);
   const [scanResult, setScanResult] = useState<Equipment | null>(null);
@@ -44,6 +55,78 @@ export default function QRScanView({
   const [copySuccess, setCopySuccess] = useState(false);
   const [cameras, setCameras] = useState<any[]>([]);
   const [selectedCameraId, setSelectedCameraId] = useState<string>('');
+
+  // Camera capabilities states for real-time autofocus, exposure and zoom adjustment
+  const [capabilities, setCapabilities] = useState<any>(null);
+  const [exposureVal, setExposureVal] = useState<number>(0);
+  const [zoomVal, setZoomVal] = useState<number>(1);
+  const [torchOn, setTorchOn] = useState<boolean>(false);
+
+  // Sesi lapangan states
+  const [checkoutPurpose, setCheckoutPurpose] = useState('');
+  const [checkoutNotes, setCheckoutNotes] = useState('');
+  const [checkoutSuccess, setCheckoutSuccess] = useState<string | null>(null);
+  const [checkoutError, setCheckoutError] = useState<string | null>(null);
+  const [agreeToExpired, setAgreeToExpired] = useState(false);
+
+  // Return session states
+  const [checkinNotes, setCheckinNotes] = useState('');
+  const [checkinSuccess, setCheckinSuccess] = useState<string | null>(null);
+  const [showCheckinForm, setShowCheckinForm] = useState(false);
+
+  // Calculate active log
+  const activeUsageLog = scanResult && usageLogs
+    ? usageLogs.find(log => log.equipmentId === scanResult.id && log.status === 'Sedang Digunakan')
+    : null;
+
+  // Determine if equipment is shared/bersama
+  const isAlatBersama = scanResult ? (scanResult.scope === 'bersama' || !scanResult.assignedTeam) : false;
+
+  // Handle start session directly from scan result
+  const handleDirectCheckout = (e: React.FormEvent) => {
+    e.preventDefault();
+    setCheckoutError(null);
+    setCheckoutSuccess(null);
+    setCheckinSuccess(null);
+
+    if (!scanResult || !onStartUsage) return;
+
+    if (!checkoutPurpose.trim()) {
+      setCheckoutError('Mohon masukkan tujuan sampling lapangan!');
+      return;
+    }
+
+    if (scanResult.status === 'expired' && !agreeToExpired) {
+      setCheckoutError('Alat ini telah melewati batas kalibrasi! Anda harus menyetujui peringatan risiko untuk melanjutkan.');
+      return;
+    }
+
+    const operatorName = currentUser?.name || 'Petugas Sampling';
+    
+    // Call props function
+    onStartUsage(scanResult.id, operatorName, checkoutPurpose.trim(), checkoutNotes.trim());
+
+    // Show success message
+    setCheckoutSuccess(`Sesi pemakaian untuk ${scanResult.name} berhasil dimulai!`);
+    setCheckoutPurpose('');
+    setCheckoutNotes('');
+  };
+
+  // Handle end session directly from scan result
+  const handleDirectCheckin = (e: React.FormEvent, logId: string) => {
+    e.preventDefault();
+    setCheckinSuccess(null);
+    setCheckoutSuccess(null);
+
+    if (!scanResult || !onEndUsage) return;
+
+    const notesToSubmit = checkinNotes.trim() || 'Alat dikembalikan dari lapangan dalam kondisi bersih dan lengkap.';
+    onEndUsage(logId, notesToSubmit);
+
+    setCheckinSuccess('Alat berhasil dikembalikan! Menunggu verifikasi kondisi oleh admin.');
+    setCheckinNotes('');
+    setShowCheckinForm(false);
+  };
 
   const handleCopyLink = () => {
     if (scannedLink) {
@@ -55,16 +138,111 @@ export default function QRScanView({
 
   const html5QrcodeRef = useRef<Html5Qrcode | null>(null);
 
-  // Clean up camera stream on unmount
-  useEffect(() => {
-    return () => {
-      if (html5QrcodeRef.current) {
-        html5QrcodeRef.current.stop().catch(err => {
-          console.log('Error stopping html5Qrcode during cleanup:', err);
-        });
+  // Camera mount and unmount lifecycle is managed after startCamera is declared
+
+  // Update camera track capabilities to expose zoom, exposure compensation, and torch toggles
+  const updateCameraTrackCapabilities = () => {
+    try {
+      const videoEl = document.querySelector("#qr-reader video") as HTMLVideoElement;
+      if (videoEl && videoEl.srcObject) {
+        const stream = videoEl.srcObject as MediaStream;
+        const track = stream.getVideoTracks()[0];
+        if (track) {
+          const caps = (track as any).getCapabilities ? (track as any).getCapabilities() : {};
+          setCapabilities(caps);
+          
+          const settings = track.getSettings() as any;
+          if (caps.exposureCompensation && settings.exposureCompensation !== undefined) {
+            setExposureVal(settings.exposureCompensation);
+          }
+          if (caps.zoom && settings.zoom !== undefined) {
+            setZoomVal(settings.zoom);
+          }
+          if (caps.torch && settings.torch !== undefined) {
+            setTorchOn(settings.torch);
+          }
+        }
       }
-    };
-  }, []);
+    } catch (e) {
+      console.warn("Could not retrieve camera capabilities:", e);
+    }
+  };
+
+  // Apply track advanced constraint
+  const applyTrackConstraint = async (key: string, value: any) => {
+    try {
+      const videoEl = document.querySelector("#qr-reader video") as HTMLVideoElement;
+      if (videoEl && videoEl.srcObject) {
+        const stream = videoEl.srcObject as MediaStream;
+        const track = stream.getVideoTracks()[0];
+        if (track) {
+          const constraints: any = {
+            advanced: [{ [key]: value }]
+          };
+          await track.applyConstraints(constraints);
+          console.log(`Applied constraint: ${key} = ${value}`);
+          
+          // Update values
+          if (key === 'exposureCompensation') setExposureVal(value);
+          if (key === 'zoom') setZoomVal(value);
+          if (key === 'torch') setTorchOn(value);
+          
+          updateCameraTrackCapabilities();
+        }
+      }
+    } catch (err) {
+      console.warn(`Failed to apply constraint ${key}=${value}:`, err);
+    }
+  };
+
+  // Trigger real-time refocus mechanism
+  const triggerManualRefocus = async () => {
+    try {
+      const videoEl = document.querySelector("#qr-reader video") as HTMLVideoElement;
+      if (videoEl && videoEl.srcObject) {
+        const stream = videoEl.srcObject as MediaStream;
+        const track = stream.getVideoTracks()[0];
+        if (track) {
+          const caps = (track as any).getCapabilities ? (track as any).getCapabilities() : {};
+          
+          if (caps.focusMode) {
+            const originalMode = (track.getSettings() as any).focusMode;
+            if (caps.focusMode.includes('single-shot')) {
+              await track.applyConstraints({ advanced: [{ focusMode: 'single-shot' }] } as any);
+              await new Promise(r => setTimeout(r, 150));
+            }
+            const fallbackMode = caps.focusMode.includes('continuous') ? 'continuous' : originalMode;
+            if (fallbackMode) {
+              await track.applyConstraints({ advanced: [{ focusMode: fallbackMode }] } as any);
+            }
+          } else {
+            // Jitter zoom level slightly to force older/iOS hardware autofocus systems to recalculate focus
+            const currentZoom = (track.getSettings() as any).zoom || 1.0;
+            const tempZoom = currentZoom > 1.1 ? currentZoom - 0.1 : currentZoom + 0.1;
+            
+            await track.applyConstraints({ advanced: [{ zoom: tempZoom }] } as any);
+            await new Promise(r => setTimeout(r, 200));
+            await track.applyConstraints({ advanced: [{ zoom: currentZoom }] } as any);
+          }
+          console.log("Real-time refocus command executed.");
+        }
+      }
+    } catch (e) {
+      console.warn("Autofocus recalibration failed:", e);
+    }
+  };
+
+  const selectAndReset = (eq: Equipment) => {
+    setScanResult(eq);
+    setCheckoutPurpose('');
+    setCheckoutNotes('');
+    setCheckoutSuccess(null);
+    setCheckoutError(null);
+    setCheckinNotes('');
+    setCheckinSuccess(null);
+    setShowCheckinForm(false);
+    setAgreeToExpired(false);
+  };
 
   // Handle parsed decoded text
   const handleDecodedText = (decodedText: string) => {
@@ -107,7 +285,7 @@ export default function QRScanView({
           console.log('Audio beep blocked:', e);
         }
 
-        setScanResult(matched);
+        selectAndReset(matched);
         setScannedLink(parsedLink || `${window.location.origin}${window.location.pathname}?eqId=${matched.id}`);
         setCameraError(null);
         // Automatically stop the camera once we successfully scan and identify an item
@@ -154,6 +332,32 @@ export default function QRScanView({
           },
           () => {}
         );
+        
+        // Attempt to apply continuous real-time autofocus and automatic exposure
+        try {
+          const videoEl = document.querySelector("#qr-reader video") as HTMLVideoElement;
+          if (videoEl && videoEl.srcObject) {
+            const stream = videoEl.srcObject as MediaStream;
+            const track = stream.getVideoTracks()[0];
+            if (track) {
+              const caps = (track as any).getCapabilities ? (track as any).getCapabilities() : {};
+              const advanced: any = {};
+              if (caps.focusMode && caps.focusMode.includes('continuous')) {
+                advanced.focusMode = 'continuous';
+              }
+              if (caps.exposureMode && caps.exposureMode.includes('continuous')) {
+                advanced.exposureMode = 'continuous';
+              }
+              if (Object.keys(advanced).length > 0) {
+                await track.applyConstraints({ advanced: [advanced] } as any);
+              }
+            }
+          }
+        } catch (e) {
+          console.log('Continuous mode config skipped during camera transition:', e);
+        }
+
+        updateCameraTrackCapabilities();
         setScanning(false);
       } catch (err) {
         console.error('Error switching camera:', err);
@@ -232,6 +436,32 @@ export default function QRScanView({
               // Ignore frames with no barcode
             }
           );
+
+          // Attempt to apply continuous real-time autofocus and automatic exposure
+          try {
+            const videoEl = document.querySelector("#qr-reader video") as HTMLVideoElement;
+            if (videoEl && videoEl.srcObject) {
+              const stream = videoEl.srcObject as MediaStream;
+              const track = stream.getVideoTracks()[0];
+              if (track) {
+                const caps = (track as any).getCapabilities ? (track as any).getCapabilities() : {};
+                const advanced: any = {};
+                if (caps.focusMode && caps.focusMode.includes('continuous')) {
+                  advanced.focusMode = 'continuous';
+                }
+                if (caps.exposureMode && caps.exposureMode.includes('continuous')) {
+                  advanced.exposureMode = 'continuous';
+                }
+                if (Object.keys(advanced).length > 0) {
+                  await track.applyConstraints({ advanced: [advanced] } as any);
+                }
+              }
+            }
+          } catch (e) {
+            console.log('Continuous mode config skipped on boot:', e);
+          }
+
+          updateCameraTrackCapabilities();
           setScanning(false);
         } catch (err: any) {
           console.error('Camera start error inside timeout:', err);
@@ -263,6 +493,19 @@ export default function QRScanView({
     setScanning(false);
   };
 
+  // Automatically start camera on mount and clean up on unmount
+  useEffect(() => {
+    startCamera();
+
+    return () => {
+      if (html5QrcodeRef.current) {
+        html5QrcodeRef.current.stop().catch(err => {
+          console.log('Error stopping html5Qrcode during cleanup:', err);
+        });
+      }
+    };
+  }, []);
+
   // Trigger scan sequence
   const handleScanSimulation = (id: string) => {
     if (!id) return;
@@ -291,7 +534,7 @@ export default function QRScanView({
     setTimeout(() => {
       const matched = equipmentList.find(e => e.id === id);
       if (matched) {
-        setScanResult(matched);
+        selectAndReset(matched);
         setScannedLink(`${window.location.origin}${window.location.pathname}?eqId=${matched.id}`);
         playBeep();
       }
@@ -408,6 +651,7 @@ export default function QRScanView({
               </select>
             </div>
           )}
+
 
           {cameraError && (
             <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-start space-x-2 text-xs text-amber-800 leading-relaxed">
@@ -547,6 +791,7 @@ export default function QRScanView({
                         <div className="flex items-center space-x-2 bg-white px-2 py-1.5 rounded-lg border border-slate-200/60 font-mono text-[10px] text-slate-600 overflow-hidden">
                           <span className="truncate flex-1">{scannedLink}</span>
                           <button
+                            type="button"
                             onClick={handleCopyLink}
                             className={`px-2 py-1 rounded text-[10px] font-bold transition shrink-0 cursor-pointer ${
                               copySuccess 
@@ -558,6 +803,246 @@ export default function QRScanView({
                           </button>
                         </div>
                       </div>
+                    )}
+                  </div>
+
+                  {/* Scope of Use Info */}
+                  <div className="flex items-center space-x-2 p-3 rounded-xl border bg-slate-50 border-slate-200/50">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Tipe Inventaris:</span>
+                    <span className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-full uppercase ${
+                      isAlatBersama 
+                        ? 'bg-blue-50 text-blue-750 border border-blue-150'
+                        : 'bg-indigo-50 text-indigo-755 border border-indigo-150'
+                    }`}>
+                      {isAlatBersama ? 'Alat Bersama (Shared)' : `Alat Khusus (${scanResult.assignedTeam || 'Tim'})`}
+                    </span>
+                  </div>
+
+                  {/* Operational Status Panel (Check-out / Check-in) */}
+                  <div className="border-t border-slate-100 pt-5 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center space-x-1.5">
+                        <Zap size={14} className="text-indigo-600 animate-pulse" />
+                        <span>Sesi & Sirkulasi Lapangan</span>
+                      </h3>
+                      
+                      <span className={`text-[10px] font-black px-2.5 py-1 rounded-md uppercase border ${
+                        activeUsageLog 
+                          ? 'bg-amber-50 text-amber-700 border-amber-200' 
+                          : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                      }`}>
+                        {activeUsageLog ? 'Sedang Digunakan' : 'Tersedia'}
+                      </span>
+                    </div>
+
+                    {/* Feedback Messages */}
+                    {checkoutSuccess && (
+                      <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl flex items-start space-x-2 text-xs text-emerald-800">
+                        <CheckCircle className="text-emerald-500 shrink-0 mt-0.5" size={16} />
+                        <div>
+                          <p className="font-bold">{checkoutSuccess}</p>
+                          <p className="text-[10px] text-emerald-600 mt-0.5">Silakan bawa alat ini ke lapangan untuk digunakan bersama tim Anda.</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {checkinSuccess && (
+                      <div className="p-4 bg-teal-50 border border-teal-200 rounded-xl flex items-start space-x-2 text-xs text-teal-800">
+                        <CheckCircle className="text-teal-500 shrink-0 mt-0.5" size={16} />
+                        <div>
+                          <p className="font-bold">{checkinSuccess}</p>
+                          <p className="text-[10px] text-teal-600 mt-0.5">Admin akan memverifikasi kondisi alat sebelum status kembali normal.</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {checkoutError && (
+                      <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl flex items-start space-x-2 text-xs text-rose-800">
+                        <AlertTriangle className="text-rose-500 shrink-0 mt-0.5" size={16} />
+                        <span>{checkoutError}</span>
+                      </div>
+                    )}
+
+                    {/* IF CURRENTLY ACTIVE: Show Return option */}
+                    {activeUsageLog ? (
+                      <div className="bg-amber-50/60 border border-amber-200/80 p-4 rounded-xl space-y-3">
+                        <div className="text-xs text-slate-700 leading-relaxed space-y-1">
+                          <p>
+                            Alat ini sedang aktif digunakan oleh <span className="font-bold text-slate-900">{activeUsageLog.operator}</span>
+                            {activeUsageLog.operatorTeam ? <> dari <span className="font-bold text-slate-900">{activeUsageLog.operatorTeam}</span></> : ''}.
+                          </p>
+                          <p className="text-[10px] text-slate-500">
+                            Tujuan: <span className="italic font-medium text-slate-700">"{activeUsageLog.purpose}"</span>
+                          </p>
+                          <p className="text-[10px] text-slate-400">
+                            Mulai sejak: {activeUsageLog.startTime} pada {formatDateIndo(activeUsageLog.startDate)}
+                          </p>
+                        </div>
+
+                        {!showCheckinForm ? (
+                          <button
+                            type="button"
+                            onClick={() => setShowCheckinForm(true)}
+                            className="w-full bg-slate-900 hover:bg-black text-white text-xs font-bold py-2 px-3 rounded-lg flex items-center justify-center space-x-1.5 transition cursor-pointer"
+                          >
+                            <RotateCcw size={14} />
+                            <span>Kembalikan Alat (Check-in)</span>
+                          </button>
+                        ) : (
+                          <form onSubmit={(e) => handleDirectCheckin(e, activeUsageLog.id)} className="space-y-3 pt-2 border-t border-amber-200/50">
+                            <div>
+                              <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">
+                                Catatan Pengembalian / Kondisi Alat
+                              </label>
+                              <textarea
+                                value={checkinNotes}
+                                onChange={(e) => setCheckinNotes(e.target.value)}
+                                placeholder="Contoh: Alat dikembalikan lengkap, dibersihkan, tidak ada kendala."
+                                className="w-full text-xs px-3 py-2 border border-slate-200 rounded-lg bg-white focus:ring-1 focus:ring-indigo-500 focus:outline-none h-16 resize-none"
+                              />
+                            </div>
+                            <div className="flex space-x-2">
+                              <button
+                                type="button"
+                                onClick={() => setShowCheckinForm(false)}
+                                className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold py-1.5 rounded-lg transition cursor-pointer"
+                              >
+                                Batal
+                              </button>
+                              <button
+                                type="submit"
+                                className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-1.5 rounded-lg transition cursor-pointer"
+                              >
+                                Konfirmasi Kembali
+                              </button>
+                            </div>
+                          </form>
+                        )}
+                      </div>
+                    ) : (
+                      /* IF FREE: Show Checkout option */
+                      <form onSubmit={handleDirectCheckout} className="bg-indigo-50/50 border border-indigo-100 p-4 rounded-xl space-y-4">
+                        <div className="space-y-1">
+                          <p className="text-xs font-bold text-indigo-950">
+                            Mulai Pemakaian Sesi Lapangan
+                          </p>
+                          <p className="text-[10px] text-slate-500">
+                            Alat ini sedang kosong. Harap isi form di bawah ini untuk menandai checkout fisik alat sebelum membawanya ke lapangan.
+                          </p>
+                        </div>
+
+                        <div className="space-y-3">
+                          {/* Quick selection templates for purpose */}
+                          <div className="space-y-1.5">
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                              Tujuan Penggunaan (Pilih Cepat)
+                            </label>
+                            <div className="flex flex-wrap gap-1">
+                              {[
+                                'Sampling Air Lapangan',
+                                'Monitoring Kualitas Udara',
+                                'Pengukuran Lapangan pH Tanah',
+                                'Audit Emisi Industri',
+                                'Kalibrasi Mandiri / Cross-check'
+                              ].map((tmpl) => (
+                                <button
+                                  key={tmpl}
+                                  type="button"
+                                  onClick={() => setCheckoutPurpose(tmpl)}
+                                  className={`text-[9px] font-semibold px-2 py-1 rounded transition border cursor-pointer ${
+                                    checkoutPurpose === tmpl 
+                                      ? 'bg-indigo-600 text-white border-indigo-600' 
+                                      : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
+                                  }`}
+                                >
+                                  {tmpl}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                                Operator Sampling (PIC)
+                              </label>
+                              <input
+                                type="text"
+                                readOnly
+                                value={currentUser?.name || 'Petugas Sampling'}
+                                className="w-full text-xs px-3 py-2 border border-slate-200 rounded-lg bg-slate-100 font-semibold text-slate-600 focus:outline-none"
+                              />
+                            </div>
+                            
+                            <div>
+                              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                                Divisi Tim Kerja
+                              </label>
+                              <input
+                                type="text"
+                                readOnly
+                                value={currentUser?.team || 'Umum / Bersama'}
+                                className="w-full text-xs px-3 py-2 border border-slate-200 rounded-lg bg-slate-100 font-semibold text-slate-600 focus:outline-none"
+                              />
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                              Tujuan Sampling / Lokasi Detail <span className="text-rose-500">*</span>
+                            </label>
+                            <input
+                              type="text"
+                              value={checkoutPurpose}
+                              onChange={(e) => setCheckoutPurpose(e.target.value)}
+                              placeholder="Ketik tujuan atau lokasi sampling detail..."
+                              className="w-full text-xs px-3 py-2 border border-slate-200 rounded-lg bg-white focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                              required
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                              Catatan Tambahan (Kondisi Awal / Perlengkapan)
+                            </label>
+                            <input
+                              type="text"
+                              value={checkoutNotes}
+                              onChange={(e) => setCheckoutNotes(e.target.value)}
+                              placeholder="Contoh: Kondisi fisik bersih, baterai penuh, include box."
+                              className="w-full text-xs px-3 py-2 border border-slate-200 rounded-lg bg-white focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                            />
+                          </div>
+
+                          {/* IF EXPIRED: Show warnings and require checkbox */}
+                          {scanResult.status === 'expired' && (
+                            <div className="p-3 bg-rose-50 border border-rose-150 rounded-lg space-y-2">
+                              <p className="text-[10px] font-bold text-rose-800 leading-relaxed">
+                                ⚠️ PERINGATAN: Alat ini telah melewati tenggat kalibrasi. Hasil sampling lapangan mungkin tidak dapat dipertanggungjawabkan!
+                              </p>
+                              <label className="flex items-start space-x-2 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={agreeToExpired}
+                                  onChange={(e) => setAgreeToExpired(e.target.checked)}
+                                  className="mt-0.5 h-3.5 w-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                                />
+                                <span className="text-[9px] font-bold text-rose-900 leading-tight">
+                                  Saya memahami risiko hukum & administratif dan setuju tetap membawa alat ini.
+                                </span>
+                              </label>
+                            </div>
+                          )}
+
+                          <button
+                            type="submit"
+                            className="w-full bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold py-2.5 px-4 rounded-xl flex items-center justify-center space-x-2 transition cursor-pointer shadow-sm hover:shadow-md"
+                          >
+                            <Zap size={15} />
+                            <span>Konfirmasi Ambil & Bawa Alat Bersama</span>
+                          </button>
+                        </div>
+                      </form>
                     )}
                   </div>
 

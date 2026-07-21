@@ -24,10 +24,11 @@ import {
   X,
   Settings,
   Download,
-  Share2
+  Share2,
+  Users
 } from 'lucide-react';
 
-import { Equipment, MaintenanceRecord, UsageLog, SystemNotification, CalibrationStatus } from './types';
+import { Equipment, MaintenanceRecord, UsageLog, SystemNotification, CalibrationStatus, User as SystemUser } from './types';
 import { 
   INITIAL_EQUIPMENT, 
   INITIAL_MAINTENANCE, 
@@ -44,6 +45,9 @@ import QRScanView from './components/QRScanView';
 import UsageLogsView from './components/UsageLogsView';
 import AuditView from './components/AuditView';
 import SettingsView from './components/SettingsView';
+import LoginView from './components/LoginView';
+import TeamView from './components/TeamView';
+import UserProfileModal from './components/UserProfileModal';
 
 export default function App() {
   // Global persistent states (using localStorage)
@@ -99,6 +103,29 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [selectedEqId, setSelectedEqId] = useState<string | null>(null);
 
+  // Authentication & Users state
+  const [activeUser, setActiveUser] = useState<SystemUser | null>(() => {
+    const saved = localStorage.getItem('active_user');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (parsed && parsed.username && parsed.username.toLowerCase().includes('gkrismantara')) {
+          parsed.role = 'admin';
+          parsed.team = '';
+          localStorage.setItem('active_user', JSON.stringify(parsed));
+        }
+        return parsed;
+      } catch (e) {
+        console.error(e);
+      }
+    }
+    return null;
+  });
+  const [usersList, setUsersList] = useState<SystemUser[]>([]);
+  const [teamsList, setTeamsList] = useState<string[]>(['Tim A', 'Tim B', 'Tim C', 'Tim D']);
+  const [selfRegistrationEnabled, setSelfRegistrationEnabled] = useState<boolean>(true);
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+
   // Branding & Design States
   const [appName, setAppName] = useState(() => localStorage.getItem('cfg_app_name') || 'LabCalib');
   const [appSubtitle, setAppSubtitle] = useState(() => localStorage.getItem('cfg_app_subtitle') || 'Metrologi Lab');
@@ -106,6 +133,17 @@ export default function App() {
   const [sidebarBg, setSidebarBg] = useState(() => localStorage.getItem('cfg_sidebar_bg') || 'midnight');
   const [sidebarOpacity, setSidebarOpacity] = useState(() => localStorage.getItem('cfg_sidebar_opacity') || '85');
   const [sidebarBlur, setSidebarBlur] = useState(() => localStorage.getItem('cfg_sidebar_blur') || 'md');
+  const [appBg, setAppBg] = useState(() => localStorage.getItem('cfg_app_bg') || 'slate');
+  const [loginBg, setLoginBg] = useState(() => localStorage.getItem('cfg_login_bg') || 'dark');
+  const [warningDays, setWarningDays] = useState<number>(() => Number(localStorage.getItem('cfg_warning_days') || '30'));
+
+  useEffect(() => {
+    const handleSettingsUpdated = () => {
+      setWarningDays(Number(localStorage.getItem('cfg_warning_days') || '30'));
+    };
+    window.addEventListener('lab_settings_updated', handleSettingsUpdated);
+    return () => window.removeEventListener('lab_settings_updated', handleSettingsUpdated);
+  }, []);
 
   // Synchronization with server-side database
   const syncState = async (updates: {
@@ -114,6 +152,9 @@ export default function App() {
     usageLogs?: UsageLog[];
     notifications?: SystemNotification[];
     settings?: any;
+    users?: SystemUser[];
+    teams?: string[];
+    selfRegistrationEnabled?: boolean;
   }) => {
     try {
       await fetch('/api/save-state', {
@@ -136,6 +177,9 @@ export default function App() {
           if (db.maintenance !== undefined) setMaintenanceRecords(db.maintenance);
           if (db.usageLogs !== undefined) setUsageLogs(db.usageLogs);
           if (db.notifications !== undefined) setNotifications(db.notifications);
+          if (db.users !== undefined) setUsersList(db.users);
+          if (db.teams !== undefined) setTeamsList(db.teams);
+          if (db.selfRegistrationEnabled !== undefined) setSelfRegistrationEnabled(db.selfRegistrationEnabled);
           if (db.settings !== undefined) {
             const s = db.settings;
             if (s.appName !== undefined) { setAppName(s.appName); localStorage.setItem('cfg_app_name', s.appName); }
@@ -144,6 +188,8 @@ export default function App() {
             if (s.sidebarBg !== undefined) { setSidebarBg(s.sidebarBg); localStorage.setItem('cfg_sidebar_bg', s.sidebarBg); }
             if (s.sidebarOpacity !== undefined) { setSidebarOpacity(s.sidebarOpacity); localStorage.setItem('cfg_sidebar_opacity', s.sidebarOpacity); }
             if (s.sidebarBlur !== undefined) { setSidebarBlur(s.sidebarBlur); localStorage.setItem('cfg_sidebar_blur', s.sidebarBlur); }
+            if (s.appBg !== undefined) { setAppBg(s.appBg); localStorage.setItem('cfg_app_bg', s.appBg); }
+            if (s.loginBg !== undefined) { setLoginBg(s.loginBg); localStorage.setItem('cfg_login_bg', s.loginBg); }
             
             if (s.labName !== undefined) localStorage.setItem('cfg_lab_name', s.labName);
             if (s.warningDays !== undefined) localStorage.setItem('cfg_warning_days', String(s.warningDays));
@@ -170,11 +216,14 @@ export default function App() {
       try {
         const message = JSON.parse(event.data);
         if (message.type === 'STATE_UPDATED') {
-          const { equipment, maintenance, usageLogs, notifications: notifs, settings } = message.data;
+          const { equipment, maintenance, usageLogs, notifications: notifs, settings, users, teams, selfRegistrationEnabled: selfReg } = message.data;
           if (equipment !== undefined) setEquipmentList(equipment);
           if (maintenance !== undefined) setMaintenanceRecords(maintenance);
           if (usageLogs !== undefined) setUsageLogs(usageLogs);
           if (notifs !== undefined) setNotifications(notifs);
+          if (users !== undefined) setUsersList(users);
+          if (teams !== undefined) setTeamsList(teams);
+          if (selfReg !== undefined) setSelfRegistrationEnabled(selfReg);
           if (settings !== undefined) {
             const s = settings;
             if (s.appName !== undefined) { setAppName(s.appName); localStorage.setItem('cfg_app_name', s.appName); }
@@ -183,6 +232,8 @@ export default function App() {
             if (s.sidebarBg !== undefined) { setSidebarBg(s.sidebarBg); localStorage.setItem('cfg_sidebar_bg', s.sidebarBg); }
             if (s.sidebarOpacity !== undefined) { setSidebarOpacity(s.sidebarOpacity); localStorage.setItem('cfg_sidebar_opacity', s.sidebarOpacity); }
             if (s.sidebarBlur !== undefined) { setSidebarBlur(s.sidebarBlur); localStorage.setItem('cfg_sidebar_blur', s.sidebarBlur); }
+            if (s.appBg !== undefined) { setAppBg(s.appBg); localStorage.setItem('cfg_app_bg', s.appBg); }
+            if (s.loginBg !== undefined) { setLoginBg(s.loginBg); localStorage.setItem('cfg_login_bg', s.loginBg); }
             
             if (s.labName !== undefined) localStorage.setItem('cfg_lab_name', s.labName);
             if (s.warningDays !== undefined) localStorage.setItem('cfg_warning_days', String(s.warningDays));
@@ -214,6 +265,15 @@ export default function App() {
       socket.close();
     };
   }, []);
+
+  // Auto-promote gkrismantara username to admin role
+  useEffect(() => {
+    if (activeUser && activeUser.username.toLowerCase().includes('gkrismantara') && activeUser.role !== 'admin') {
+      const updatedUser = { ...activeUser, role: 'admin' as const, team: '' };
+      setActiveUser(updatedUser);
+      localStorage.setItem('active_user', JSON.stringify(updatedUser));
+    }
+  }, [activeUser]);
 
   // PWA & Connection States
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
@@ -258,6 +318,8 @@ export default function App() {
       setSidebarBg(localStorage.getItem('cfg_sidebar_bg') || 'midnight');
       setSidebarOpacity(localStorage.getItem('cfg_sidebar_opacity') || '85');
       setSidebarBlur(localStorage.getItem('cfg_sidebar_blur') || 'md');
+      setAppBg(localStorage.getItem('cfg_app_bg') || 'slate');
+      setLoginBg(localStorage.getItem('cfg_login_bg') || 'dark');
     };
     window.addEventListener('lab_settings_updated', handleBrandingUpdate);
     return () => {
@@ -309,21 +371,25 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
-  // Recalculate calibration status warning on load based on current system date
+  // Recalculate calibration status warning on load based on current system date and warningDays
   useEffect(() => {
     setEquipmentList(prevList => {
       let updated = false;
       const newList = prevList.map(eq => {
-        const calculatedStatus = determineStatus(eq.nextCalibrationDate, TODAY_STR, eq.status);
-        if (calculatedStatus !== eq.status) {
+        // We only override the status of active items, not ones currently undergoing calibrating or maintenance
+        const calculatedStatus = determineStatus(eq.nextCalibrationDate, TODAY_STR, eq.status, warningDays);
+        if (calculatedStatus !== eq.status && eq.status !== 'calibrating' && eq.status !== 'maintenance') {
           updated = true;
           return { ...eq, status: calculatedStatus };
         }
         return eq;
       });
+      if (updated) {
+        syncState({ equipment: newList });
+      }
       return updated ? newList : prevList;
     });
-  }, []);
+  }, [warningDays]);
 
   // Listen to URL search parameters for direct deep-linking from camera QR scan
   useEffect(() => {
@@ -604,9 +670,9 @@ export default function App() {
         return {
           ...log,
           endDate: TODAY_STR,
-          endTime: '11:30', // Mock checkout time
+          endTime: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
           notes,
-          status: 'Selesai'
+          status: 'Menunggu Verifikasi'
         };
       }
       return log;
@@ -618,15 +684,64 @@ export default function App() {
     const newNotif: SystemNotification = {
       id: `NOT-LOG-END-${Date.now()}`,
       equipmentId: matchedLog?.equipmentId,
-      title: 'Sesi Pemakaian Selesai',
-      message: `${matchedLog?.operator || 'Petugas'} mengembalikan alat "${matchedLog?.equipmentName || 'Alat'}" ke status standby.`,
-      type: 'info',
-      date: '2026-07-14 01:00',
+      title: 'Pemakaian Selesai & Menunggu Verifikasi',
+      message: `${matchedLog?.operator || 'Petugas'} mengembalikan alat "${matchedLog?.equipmentName || 'Alat'}" dan menunggu verifikasi Admin.`,
+      type: 'warning',
+      date: new Date().toISOString().replace('T', ' ').substring(0, 16),
       isRead: false
     };
     const nextNotifs = [newNotif, ...notifications];
     setNotifications(nextNotifs);
     syncState({ usageLogs: nextLogs, notifications: nextNotifs });
+  };
+
+  // 7. Verify Usage Log (by Admin)
+  const handleVerifyUsage = (logId: string, condition: 'sehat' | 'kendala', verificationNotes: string) => {
+    const matchedLog = usageLogs.find(l => l.id === logId);
+    if (!matchedLog) return;
+
+    const nextLogs = usageLogs.map(log => {
+      if (log.id === logId) {
+        return {
+          ...log,
+          status: 'Selesai',
+          notes: `${log.notes} | Verifikasi Admin: [${condition === 'sehat' ? 'Sehat' : 'Kendala'}] ${verificationNotes}`
+        };
+      }
+      return log;
+    });
+    setUsageLogs(nextLogs);
+
+    // Update the equipment status based on the verification condition
+    const nextEqList = equipmentList.map(eq => {
+      if (eq.id === matchedLog.equipmentId) {
+        return {
+          ...eq,
+          status: condition === 'sehat' ? 'ready' as const : 'repairing' as const
+        };
+      }
+      return eq;
+    });
+    setEquipmentList(nextEqList);
+
+    // Add verification system notification
+    const newNotif: SystemNotification = {
+      id: `NOT-LOG-VERIFY-${Date.now()}`,
+      equipmentId: matchedLog.equipmentId,
+      title: condition === 'sehat' ? 'Verifikasi Alat Sehat' : 'Laporan Kendala Alat',
+      message: `Admin ${activeUser?.name || 'Administrator'} memverifikasi pengembalian "${matchedLog.equipmentName}". Status: ${condition === 'sehat' ? 'Siap Digunakan (Standby)' : 'Butuh Perbaikan'}.`,
+      type: condition === 'sehat' ? 'success' : 'danger',
+      date: new Date().toISOString().replace('T', ' ').substring(0, 16),
+      isRead: false
+    };
+    const nextNotifs = [newNotif, ...notifications];
+    setNotifications(nextNotifs);
+
+    syncState({ 
+      usageLogs: nextLogs, 
+      equipment: nextEqList, 
+      notifications: nextNotifs 
+    });
   };
 
   // Mark all alerts read
@@ -684,6 +799,10 @@ export default function App() {
             onNavigate={(tab) => {
               setActiveTab(tab);
             }}
+            currentUser={activeUser}
+            onStartUsage={handleStartUsage}
+            onEndUsage={handleEndUsage}
+            usageLogs={usageLogs}
           />
         );
       case 'penggunaan':
@@ -693,6 +812,8 @@ export default function App() {
             equipmentList={equipmentList}
             onStartUsage={handleStartUsage}
             onEndUsage={handleEndUsage}
+            onVerifyUsage={handleVerifyUsage}
+            currentUser={activeUser}
           />
         );
       case 'laporan':
@@ -703,9 +824,36 @@ export default function App() {
             usageLogs={usageLogs}
           />
         );
+      case 'team':
+        return (
+          <TeamView
+            equipmentList={equipmentList}
+            usersList={usersList}
+            teamsList={teamsList}
+            onUpdateEquipment={handleUpdateEquipment}
+          />
+        );
       case 'pengaturan':
         return (
-          <SettingsView onSaveSettings={(settings) => syncState({ settings })} />
+          <SettingsView 
+            onSaveSettings={(settings) => syncState({ settings })}
+            usersList={usersList}
+            onUpdateUsers={(users) => {
+              setUsersList(users);
+              syncState({ users });
+            }}
+            teamsList={teamsList}
+            onUpdateTeams={(teams) => {
+              setTeamsList(teams);
+              syncState({ teams });
+            }}
+            selfRegistrationEnabled={selfRegistrationEnabled}
+            onUpdateSelfRegistration={(enabled) => {
+              setSelfRegistrationEnabled(enabled);
+              syncState({ selfRegistrationEnabled: enabled });
+            }}
+            currentUser={activeUser}
+          />
         );
       default:
         return <div className="text-center py-12">Halaman tidak ditemukan.</div>;
@@ -752,8 +900,55 @@ export default function App() {
     return 'border-white/5';
   };
 
+  const getAppBgClass = () => {
+    if (appBg === 'slate') return 'bg-slate-50 text-slate-800';
+    if (appBg === 'indigo') return 'bg-indigo-50/40 text-slate-800';
+    if (appBg === 'cream') return 'bg-amber-50/20 text-slate-800';
+    if (appBg === 'obsidian') return 'bg-slate-900 text-slate-100 dark';
+    if (appBg === 'charcoal') return 'bg-zinc-800 text-zinc-100 dark';
+    return 'bg-slate-50 text-slate-800';
+  };
+
+  const handleUpdateUserInList = (updatedUser: SystemUser) => {
+    const nextUsers = usersList.map(u => u.id === updatedUser.id ? updatedUser : u);
+    setUsersList(nextUsers);
+    syncState({ users: nextUsers });
+    if (activeUser && activeUser.id === updatedUser.id) {
+      setActiveUser(updatedUser);
+      localStorage.setItem('active_user', JSON.stringify(updatedUser));
+    }
+  };
+
+  const handleSwitchUser = (user: SystemUser) => {
+    setActiveUser(user);
+    localStorage.setItem('active_user', JSON.stringify(user));
+  };
+
+  if (!activeUser) {
+    return (
+      <LoginView 
+        usersList={usersList} 
+        onLoginSuccess={(user) => {
+          setActiveUser(user);
+          localStorage.setItem('active_user', JSON.stringify(user));
+        }}
+        onRegister={(newUser) => {
+          const nextUsers = [...usersList, newUser];
+          setUsersList(nextUsers);
+          syncState({ users: nextUsers });
+        }}
+        selfRegistrationEnabled={selfRegistrationEnabled}
+        teamsList={teamsList}
+        appName={appName}
+        appSubtitle={appSubtitle}
+        appLogo={appLogo}
+        loginBg={loginBg}
+      />
+    );
+  }
+
   return (
-    <div className="flex h-screen bg-slate-50 text-slate-800 font-sans overflow-hidden">
+    <div className={`flex h-screen font-sans overflow-hidden ${getAppBgClass()}`}>
       
       {/* 1. Desktop Side Navigation Sidebar */}
       <aside 
@@ -802,6 +997,17 @@ export default function App() {
               <span>Daftar Alat Sampling</span>
             </button>
 
+            {/* Team */}
+            <button
+              onClick={() => { setActiveTab('team'); setSelectedEqId(null); }}
+              className={`w-full flex items-center space-x-3 px-4 py-2.5 rounded-lg font-bold transition duration-150 cursor-pointer ${
+                activeTab === 'team' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-400 hover:text-white hover:bg-slate-800/40'
+              }`}
+            >
+              <Users size={16} />
+              <span>Manajemen Tim & Alat</span>
+            </button>
+
             {/* Scan QR */}
             <button
               onClick={() => { setActiveTab('scan'); setSelectedEqId(null); }}
@@ -843,7 +1049,7 @@ export default function App() {
               }`}
             >
               <Settings size={16} />
-              <span>Pengaturan & Panduan</span>
+              <span>Pengaturan</span>
             </button>
           </nav>
         </div>
@@ -861,27 +1067,36 @@ export default function App() {
             </button>
           )}
 
-          {/* Database offline status */}
-          <div className="bg-slate-800/50 rounded-xl p-3 flex items-center space-x-2.5 border border-slate-800">
-            <Database className={`${isOffline ? 'text-amber-400' : 'text-emerald-400'} shrink-0`} size={14} />
-            <div className="overflow-hidden">
-              <p className="text-[10px] font-bold text-slate-300">Database Lokal</p>
-              <p className={`text-[9px] ${isOffline ? 'text-amber-400' : 'text-emerald-400'} truncate`}>
-                {isOffline ? 'Mode Offline - Cache Aktif' : 'Persistent Offline Secure'}
-              </p>
+          {/* Dynamic Active User profile card with Logout */}
+          {activeUser && (
+            <div className="bg-slate-900/60 rounded-xl p-3 border border-slate-800/60 flex items-center justify-between">
+              <div 
+                onClick={() => setIsProfileModalOpen(true)}
+                className="min-w-0 flex items-center space-x-2 cursor-pointer hover:opacity-85 transition flex-1"
+                title="Kelola Profil & Ganti Shift"
+              >
+                <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-[10px] font-extrabold text-white shrink-0">
+                  {activeUser.name.substring(0, 2).toUpperCase()}
+                </div>
+                <div className="min-w-0">
+                  <h4 className="text-[10px] font-extrabold text-slate-200 truncate leading-tight" title={activeUser.name}>{activeUser.name}</h4>
+                  <p className="text-[8px] text-indigo-300 font-bold uppercase tracking-wider truncate">
+                    {activeUser.role === 'admin' ? 'Administrator' : `Petugas • ${activeUser.team || 'Bersama'}`}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setActiveUser(null);
+                  localStorage.removeItem('active_user');
+                }}
+                className="p-1 hover:bg-rose-500/10 hover:text-rose-400 rounded text-slate-400 transition cursor-pointer shrink-0 ml-1"
+                title="Keluar / Logout"
+              >
+                <Power size={12} />
+              </button>
             </div>
-          </div>
-
-          {/* User Email block */}
-          <div className="flex items-center space-x-2 px-2 py-1">
-            <div className="w-7 h-7 rounded-full bg-slate-800 flex items-center justify-center text-[11px] font-bold text-indigo-400 border border-slate-700">
-              GK
-            </div>
-            <div className="overflow-hidden">
-              <p className="text-[10px] font-bold text-slate-200 truncate">gkrismantara@gmail.com</p>
-              <p className="text-[9px] text-slate-500">Staf Pengawas Lab</p>
-            </div>
-          </div>
+          )}
         </div>
       </aside>
 
@@ -1066,6 +1281,16 @@ export default function App() {
                   </button>
 
                   <button
+                    onClick={() => { setActiveTab('team'); setSelectedEqId(null); setMobileMenuOpen(false); }}
+                    className={`w-full flex items-center space-x-3 px-4 py-2.5 rounded-lg transition ${
+                      activeTab === 'team' ? 'bg-indigo-600 text-white' : 'hover:bg-slate-800/50'
+                    }`}
+                  >
+                    <Users size={16} />
+                    <span>Manajemen Tim & Alat</span>
+                  </button>
+
+                  <button
                     onClick={() => { setActiveTab('scan'); setSelectedEqId(null); setMobileMenuOpen(false); }}
                     className={`w-full flex items-center space-x-3 px-4 py-2.5 rounded-lg transition ${
                       activeTab === 'scan' ? 'bg-indigo-600 text-white' : 'hover:bg-slate-800/50'
@@ -1102,7 +1327,7 @@ export default function App() {
                     }`}
                   >
                     <Settings size={16} />
-                    <span>Pengaturan & Panduan</span>
+                    <span>Pengaturan</span>
                   </button>
                 </nav>
               </div>
@@ -1118,24 +1343,54 @@ export default function App() {
                     <span>Pasang Aplikasi HP</span>
                   </button>
                 )}
-                <div className="bg-slate-800/40 rounded-lg p-2.5 flex items-center space-x-2 border border-slate-800 text-[10px]">
-                  <Database className={`${isOffline ? 'text-amber-400' : 'text-emerald-400'} shrink-0`} size={12} />
-                  <div>
-                    <p className="font-bold text-slate-300 leading-tight">Database Lokal</p>
-                    <p className={`text-[8px] ${isOffline ? 'text-amber-400' : 'text-emerald-400'} mt-0.5`}>
-                      {isOffline ? 'Mode Offline (Cache Aktif)' : 'Persistent Offline Secure'}
-                    </p>
+                {activeUser && (
+                  <div className="bg-slate-900/60 rounded-xl p-3 border border-slate-800/60 flex items-center justify-between mt-2">
+                    <div 
+                      onClick={() => { setIsProfileModalOpen(true); setMobileMenuOpen(false); }}
+                      className="min-w-0 flex items-center space-x-2 cursor-pointer hover:opacity-85 transition flex-1"
+                      title="Kelola Profil & Ganti Shift"
+                    >
+                      <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-[10px] font-extrabold text-white shrink-0">
+                        {activeUser.name.substring(0, 2).toUpperCase()}
+                      </div>
+                      <div className="min-w-0">
+                        <h4 className="text-[10px] font-extrabold text-slate-200 truncate leading-tight" title={activeUser.name}>{activeUser.name}</h4>
+                        <p className="text-[8px] text-indigo-300 font-bold uppercase tracking-wider truncate">
+                          {activeUser.role === 'admin' ? 'Administrator' : `Petugas • ${activeUser.team || 'Bersama'}`}
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setActiveUser(null);
+                        localStorage.removeItem('active_user');
+                        setMobileMenuOpen(false);
+                      }}
+                      className="p-1 hover:bg-rose-500/10 hover:text-rose-400 rounded text-slate-400 transition cursor-pointer shrink-0 ml-1"
+                      title="Keluar / Logout"
+                    >
+                      <Power size={12} />
+                    </button>
                   </div>
-                </div>
-                <div>
-                  <p className="font-bold text-slate-300">gkrismantara@gmail.com</p>
-                  <p className="text-[10px] text-slate-500">Staf Pengawas Lab</p>
-                </div>
+                )}
               </div>
             </motion.div>
           </>
         )}
       </AnimatePresence>
+
+      {activeUser && (
+        <UserProfileModal
+          isOpen={isProfileModalOpen}
+          onClose={() => setIsProfileModalOpen(false)}
+          currentUser={activeUser}
+          usersList={usersList}
+          usageLogs={usageLogs}
+          equipmentList={equipmentList}
+          onUpdateUser={handleUpdateUserInList}
+          onSwitchUser={handleSwitchUser}
+        />
+      )}
 
     </div>
   );
