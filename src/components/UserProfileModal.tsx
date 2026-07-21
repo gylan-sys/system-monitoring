@@ -23,7 +23,9 @@ import {
   Sparkles,
   Calendar,
   Lock,
-  ArrowRightLeft
+  ArrowRightLeft,
+  Camera,
+  Edit
 } from 'lucide-react';
 import { User as SystemUser, UsageLog, Equipment } from '../types';
 
@@ -63,6 +65,78 @@ export default function UserProfileModal({
   const [switchPassword, setSwitchPassword] = useState('');
   const [selectedUserToSwitch, setSelectedUserToSwitch] = useState<SystemUser | null>(null);
   const [switchError, setSwitchError] = useState<string | null>(null);
+
+  // Profile editing states
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const [profileName, setProfileName] = useState(currentUser.name);
+  const [profileUsername, setProfileUsername] = useState(currentUser.username);
+  const [profileTeam, setProfileTeam] = useState(currentUser.team || '');
+  const [profilePicError, setProfilePicError] = useState<string | null>(null);
+  const [profilePicSuccess, setProfilePicSuccess] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    setProfileName(currentUser.name);
+    setProfileUsername(currentUser.username);
+    setProfileTeam(currentUser.team || '');
+    setProfilePicError(null);
+    setProfilePicSuccess(null);
+  }, [currentUser]);
+
+  const handleSaveProfile = (e: React.FormEvent) => {
+    e.preventDefault();
+    setProfilePicError(null);
+    setProfilePicSuccess(null);
+
+    if (!profileName.trim()) {
+      setProfilePicError('Nama tidak boleh kosong.');
+      return;
+    }
+    if (!profileUsername.trim()) {
+      setProfilePicError('Username tidak boleh kosong.');
+      return;
+    }
+
+    onUpdateUser({
+      ...currentUser,
+      name: profileName.trim(),
+      username: profileUsername.trim().toLowerCase(),
+      team: profileTeam || undefined
+    });
+
+    setProfilePicSuccess('Profil Anda berhasil diperbarui!');
+    setIsEditingProfile(false);
+    setTimeout(() => setProfilePicSuccess(null), 3000);
+  };
+
+  const handleProfilePicUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setProfilePicError(null);
+    if (!file.type.startsWith('image/')) {
+      setProfilePicError('Format file tidak didukung. Harap pilih gambar.');
+      return;
+    }
+
+    if (file.size > 1.5 * 1024 * 1024) {
+      setProfilePicError('Ukuran file foto maksimal 1.5MB.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const base64 = event.target?.result as string;
+      if (base64) {
+        onUpdateUser({
+          ...currentUser,
+          picture: base64
+        });
+        setProfilePicSuccess('Foto profil berhasil diperbarui!');
+        setTimeout(() => setProfilePicSuccess(null), 3000);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
 
   if (!isOpen) return null;
 
@@ -156,8 +230,25 @@ export default function UserProfileModal({
               </span>
               
               <div className="pt-2 flex flex-col items-center text-center">
-                <div className="w-16 h-16 rounded-2xl bg-indigo-600 flex items-center justify-center text-xl font-black text-white shadow-lg ring-4 ring-indigo-500/20">
-                  {currentUser.name.substring(0, 2).toUpperCase()}
+                {/* Avatar with Upload Trigger */}
+                <div className="relative group cursor-pointer w-18 h-18 rounded-2xl bg-indigo-600 flex items-center justify-center text-xl font-black text-white shadow-lg ring-4 ring-indigo-500/20 overflow-hidden">
+                  {currentUser.picture ? (
+                    <img src={currentUser.picture} alt={currentUser.name} className="w-full h-full object-cover" />
+                  ) : (
+                    currentUser.name.substring(0, 2).toUpperCase()
+                  )}
+                  
+                  {/* Upload Overlay */}
+                  <label className="absolute inset-0 bg-slate-900/75 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-0.5 text-[8px] font-black text-white cursor-pointer">
+                    <Camera size={14} className="text-white" />
+                    <span>UBAH FOTO</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleProfilePicUpload}
+                      className="hidden"
+                    />
+                  </label>
                 </div>
                 
                 <h3 className="text-base font-black text-white mt-3 leading-tight truncate w-full" title={currentUser.name}>
@@ -269,35 +360,100 @@ export default function UserProfileModal({
                 <div className="space-y-4">
                   {/* Detailed Personal Details Grid */}
                   <div className="bg-white p-4 rounded-2xl border border-slate-100 space-y-3 shadow-xs">
-                    <h4 className="text-xs font-black text-slate-800 uppercase tracking-wide flex items-center gap-1">
-                      <Sparkles size={13} className="text-indigo-500" />
-                      Detail Kredensial
-                    </h4>
-                    
-                    <div className="grid grid-cols-2 gap-3 text-xs leading-relaxed">
-                      <div>
-                        <p className="text-[10px] text-slate-400 font-bold uppercase">Nama Pengguna</p>
-                        <p className="font-extrabold text-slate-700">@{currentUser.username}</p>
-                      </div>
-                      <div>
-                        <p className="text-[10px] text-slate-400 font-bold uppercase">Divisi Tim</p>
-                        <p className="font-extrabold text-slate-700">{currentUser.team || 'Divisi Admin / Bersama'}</p>
-                      </div>
-                      <div>
-                        <p className="text-[10px] text-slate-400 font-bold uppercase">Tanggal Registrasi</p>
-                        <p className="font-semibold text-slate-600 flex items-center gap-1 mt-0.5">
-                          <Calendar size={11} />
-                          {currentUser.createdAt || 'N/A'}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-[10px] text-slate-400 font-bold uppercase">Status Akun</p>
-                        <p className="font-extrabold text-emerald-600 flex items-center gap-1 mt-0.5">
-                          <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
-                          Terverifikasi
-                        </p>
-                      </div>
+                    <div className="flex items-center justify-between border-b border-slate-50 pb-2">
+                      <h4 className="text-xs font-black text-slate-800 uppercase tracking-wide flex items-center gap-1">
+                        <Sparkles size={13} className="text-indigo-500" />
+                        Detail Kredensial
+                      </h4>
+                      <button
+                        type="button"
+                        onClick={() => setIsEditingProfile(!isEditingProfile)}
+                        className="text-[10px] font-bold text-indigo-600 hover:text-indigo-700 flex items-center gap-1 cursor-pointer"
+                      >
+                        <Edit size={11} />
+                        {isEditingProfile ? 'Batal Edit' : 'Edit Info'}
+                      </button>
                     </div>
+
+                    {profilePicError && (
+                      <div className="p-2 bg-rose-50 border border-rose-100 text-rose-700 text-[10px] rounded-lg font-bold">
+                        {profilePicError}
+                      </div>
+                    )}
+                    {profilePicSuccess && (
+                      <div className="p-2 bg-emerald-50 border border-emerald-100 text-emerald-700 text-[10px] rounded-lg font-bold flex items-center gap-1 animate-pulse">
+                        <Check size={11} />
+                        {profilePicSuccess}
+                      </div>
+                    )}
+                    
+                    {isEditingProfile ? (
+                      <form onSubmit={handleSaveProfile} className="space-y-3">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                          <div className="space-y-1">
+                            <label className="block text-[10px] font-bold text-slate-400 uppercase">Nama Lengkap</label>
+                            <input
+                              type="text"
+                              value={profileName}
+                              onChange={(e) => setProfileName(e.target.value)}
+                              className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-xs font-semibold focus:outline-none focus:border-indigo-500"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="block text-[10px] font-bold text-slate-400 uppercase">Username</label>
+                            <input
+                              type="text"
+                              value={profileUsername}
+                              onChange={(e) => setProfileUsername(e.target.value)}
+                              className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-xs font-semibold focus:outline-none focus:border-indigo-500"
+                            />
+                          </div>
+                          {currentUser.role !== 'admin' && (
+                            <div className="space-y-1 col-span-2">
+                              <label className="block text-[10px] font-bold text-slate-400 uppercase">Tim Penempatan</label>
+                              <input
+                                type="text"
+                                value={profileTeam}
+                                onChange={(e) => setProfileTeam(e.target.value)}
+                                placeholder="Misal: Tim A"
+                                className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-xs font-semibold focus:outline-none focus:border-indigo-500"
+                              />
+                            </div>
+                          )}
+                        </div>
+                        <button
+                          type="submit"
+                          className="w-full py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-[11px] font-bold transition shadow-xs cursor-pointer animate-none"
+                        >
+                          Simpan Perubahan Profil
+                        </button>
+                      </form>
+                    ) : (
+                      <div className="grid grid-cols-2 gap-3 text-xs leading-relaxed">
+                        <div>
+                          <p className="text-[10px] text-slate-400 font-bold uppercase">Nama Pengguna</p>
+                          <p className="font-extrabold text-slate-700">@{currentUser.username}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] text-slate-400 font-bold uppercase">Divisi Tim</p>
+                          <p className="font-extrabold text-slate-700">{currentUser.team || 'Divisi Admin / Bersama'}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] text-slate-400 font-bold uppercase">Tanggal Registrasi</p>
+                          <p className="font-semibold text-slate-600 flex items-center gap-1 mt-0.5">
+                            <Calendar size={11} />
+                            {currentUser.createdAt || 'N/A'}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] text-slate-400 font-bold uppercase">Status Akun</p>
+                          <p className="font-extrabold text-emerald-600 flex items-center gap-1 mt-0.5">
+                            <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
+                            Terverifikasi
+                          </p>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* Borrowed / Active Tools list */}

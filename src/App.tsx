@@ -1075,8 +1075,12 @@ export default function App() {
                 className="min-w-0 flex items-center space-x-2 cursor-pointer hover:opacity-85 transition flex-1"
                 title="Kelola Profil & Ganti Shift"
               >
-                <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-[10px] font-extrabold text-white shrink-0">
-                  {activeUser.name.substring(0, 2).toUpperCase()}
+                <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-[10px] font-extrabold text-white shrink-0 overflow-hidden">
+                  {activeUser.picture ? (
+                    <img src={activeUser.picture} alt={activeUser.name} className="w-full h-full object-cover" />
+                  ) : (
+                    activeUser.name.substring(0, 2).toUpperCase()
+                  )}
                 </div>
                 <div className="min-w-0">
                   <h4 className="text-[10px] font-extrabold text-slate-200 truncate leading-tight" title={activeUser.name}>{activeUser.name}</h4>
@@ -1350,8 +1354,12 @@ export default function App() {
                       className="min-w-0 flex items-center space-x-2 cursor-pointer hover:opacity-85 transition flex-1"
                       title="Kelola Profil & Ganti Shift"
                     >
-                      <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-[10px] font-extrabold text-white shrink-0">
-                        {activeUser.name.substring(0, 2).toUpperCase()}
+                      <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-[10px] font-extrabold text-white shrink-0 overflow-hidden">
+                        {activeUser.picture ? (
+                          <img src={activeUser.picture} alt={activeUser.name} className="w-full h-full object-cover" />
+                        ) : (
+                          activeUser.name.substring(0, 2).toUpperCase()
+                        )}
                       </div>
                       <div className="min-w-0">
                         <h4 className="text-[10px] font-extrabold text-slate-200 truncate leading-tight" title={activeUser.name}>{activeUser.name}</h4>

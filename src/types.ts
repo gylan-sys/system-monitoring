@@ -69,6 +69,7 @@ export interface User {
   role: 'admin' | 'petugas';
   team?: string; // e.g., 'Tim A', 'Tim B', 'Tim C' or empty for admin
   createdAt?: string;
+  picture?: string; // Base64 profile picture
 }
 
 export interface SystemNotification {

@@ -27,7 +27,9 @@ import {
   Shield,
   ToggleLeft,
   ToggleRight,
-  Plus
+  Plus,
+  Edit,
+  Camera
 } from 'lucide-react';
 import { User } from '../types';
 
@@ -93,6 +95,8 @@ export default function SettingsView({
   const [newUserTeam, setNewUserTeam] = useState(teamsList[0] || 'Tim A');
   const [userError, setUserError] = useState<string | null>(null);
   const [userSuccess, setUserSuccess] = useState<string | null>(null);
+  const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [userPic, setUserPic] = useState<string | null>(null);
 
   useEffect(() => {
     const handleUpdate = () => {
@@ -147,6 +151,27 @@ export default function SettingsView({
     if (file) {
       processFile(file);
     }
+  };
+
+  const handleUserPicUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setUserError('Format file tidak didukung. Harap pilih file gambar.');
+      return;
+    }
+    if (file.size > 1.5 * 1024 * 1024) {
+      setUserError('Ukuran file foto profil terlalu besar. Maksimal 1.5MB.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const base64 = event.target?.result as string;
+      if (base64) {
+        setUserPic(base64);
+      }
+    };
+    reader.readAsDataURL(file);
   };
 
   const handleDrag = (e: React.DragEvent) => {
@@ -990,13 +1015,27 @@ export default function SettingsView({
                         <div className="overflow-x-auto rounded-xl border border-slate-100 divide-y divide-slate-100">
                           {usersList.map((u) => (
                             <div key={u.id} className="p-3 flex items-center justify-between text-xs bg-white hover:bg-slate-50/50 transition">
-                              <div className="min-w-0">
-                                <p className="font-bold text-slate-800">{u.name}</p>
-                                <p className="text-[10px] text-slate-400 mt-0.5">
-                                  Username: <span className="font-semibold text-slate-600">{u.username}</span> | Password: <span className="text-slate-600">{u.password}</span>
-                                </p>
+                              <div className="flex items-center space-x-3 min-w-0">
+                                <div className="w-8 h-8 rounded-full bg-slate-100 border border-slate-200 text-[10px] font-black text-slate-600 flex items-center justify-center overflow-hidden shrink-0">
+                                  {u.picture ? (
+                                    <img src={u.picture} alt={u.name} className="w-full h-full object-cover" />
+                                  ) : (
+                                    u.name.substring(0, 2).toUpperCase()
+                                  )}
+                                </div>
+                                <div className="min-w-0">
+                                  <p className="font-bold text-slate-800 flex items-center gap-1">
+                                    {u.name}
+                                    {currentUser?.id === u.id && (
+                                      <span className="px-1 text-[8px] bg-indigo-55 border border-indigo-100 text-indigo-700 rounded uppercase font-black">Anda</span>
+                                    )}
+                                  </p>
+                                  <p className="text-[10px] text-slate-400 mt-0.5">
+                                    Username: <span className="font-semibold text-slate-600">@{u.username}</span> | Password: <span className="text-slate-600 font-mono select-all">{u.password || '••••'}</span>
+                                  </p>
+                                </div>
                               </div>
-                              <div className="flex items-center space-x-2">
+                              <div className="flex items-center space-x-1.5">
                                 <span className={`px-2 py-0.5 rounded-md font-bold text-[9px] ${
                                   u.role === 'admin' 
                                     ? 'bg-rose-50 border border-rose-100 text-rose-700' 
@@ -1004,6 +1043,25 @@ export default function SettingsView({
                                 }`}>
                                   {u.role === 'admin' ? 'Admin' : u.team || 'Petugas'}
                                 </span>
+                                
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingUser(u);
+                                    setNewName(u.name);
+                                    setNewUsername(u.username);
+                                    setNewPassword(u.password || '');
+                                    setNewUserRole(u.role);
+                                    setNewUserTeam(u.team || teamsList[0] || 'Tim A');
+                                    setUserPic(u.picture || null);
+                                    setUserError(null);
+                                  }}
+                                  className="p-1 text-slate-400 hover:text-indigo-600 rounded-md transition cursor-pointer"
+                                  title="Edit Kredensial / Password / Foto"
+                                >
+                                  <Edit size={12} />
+                                </button>
+
                                 {currentUser?.id !== u.id && u.username !== 'admin' && (
                                   <button
                                     type="button"
@@ -1016,7 +1074,7 @@ export default function SettingsView({
                                     className="p-1 text-slate-400 hover:text-rose-600 rounded-md transition cursor-pointer"
                                     title="Hapus Pengguna"
                                   >
-                                    <Trash2 size={13} />
+                                    <Trash2 size={12} />
                                   </button>
                                 )}
                               </div>
@@ -1024,40 +1082,103 @@ export default function SettingsView({
                           ))}
                         </div>
 
-                        {/* Add User Form */}
-                        <div className="pt-3 border-t border-slate-100 space-y-3">
-                          <h5 className="font-bold text-slate-800 flex items-center">
-                            <UserPlus className="text-indigo-500 mr-1.5" size={13} />
-                            Tambah Akun Pengguna Baru
-                          </h5>
+                        {/* Add / Edit User Form */}
+                        <div className="pt-4 border-t border-slate-100 space-y-4">
+                          <div className="flex items-center justify-between">
+                            <h5 className="font-bold text-slate-800 flex items-center text-xs">
+                              {editingUser ? (
+                                <>
+                                  <span className="w-1.5 h-1.5 bg-indigo-500 rounded-full mr-1.5 animate-pulse" />
+                                  Edit Akun Pengguna: {editingUser.name}
+                                </>
+                              ) : (
+                                <>
+                                  <UserPlus className="text-indigo-500 mr-1.5" size={13} />
+                                  Tambah Akun Pengguna Baru
+                                </>
+                              )}
+                            </h5>
+                            {editingUser && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingUser(null);
+                                  setNewName('');
+                                  setNewUsername('');
+                                  setNewPassword('');
+                                  setNewUserRole('petugas');
+                                  setNewUserTeam(teamsList[0] || 'Tim A');
+                                  setUserPic(null);
+                                  setUserError(null);
+                                }}
+                                className="text-[10px] font-bold text-slate-500 hover:text-slate-800 px-2 py-1 bg-slate-100 hover:bg-slate-200 rounded-md transition cursor-pointer"
+                              >
+                                Batal Edit
+                              </button>
+                            )}
+                          </div>
                           
+                          {/* Profile Picture Upload Section inside Form */}
+                          <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 flex items-center gap-3 text-xs">
+                            <div className="w-10 h-10 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center overflow-hidden shrink-0 shadow-inner">
+                              {userPic ? (
+                                <img src={userPic} alt="Preview" className="w-full h-full object-cover" />
+                              ) : (
+                                <Users size={16} className="text-slate-400" />
+                              )}
+                            </div>
+                            <div className="space-y-1">
+                              <p className="font-bold text-slate-700">Foto Profil</p>
+                              <div className="flex items-center gap-2">
+                                <label className="px-2.5 py-1 bg-white hover:bg-slate-100 border border-slate-200 text-[10px] font-bold text-slate-600 rounded-md cursor-pointer shadow-2xs transition">
+                                  Pilih Gambar
+                                  <input
+                                    type="file"
+                                    accept="image/*"
+                                    onChange={handleUserPicUpload}
+                                    className="hidden"
+                                  />
+                                </label>
+                                {userPic && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setUserPic(null)}
+                                    className="text-[10px] font-bold text-rose-600 hover:text-rose-700 transition cursor-pointer"
+                                  >
+                                    Hapus
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                             <input
                               type="text"
                               value={newName}
                               onChange={(e) => setNewName(e.target.value)}
                               placeholder="Nama Lengkap"
-                              className="px-3 py-2 border border-slate-200 rounded-lg focus:outline-none"
+                              className="px-3 py-2 border border-slate-200 rounded-lg focus:outline-none text-xs"
                             />
                             <input
                               type="text"
                               value={newUsername}
                               onChange={(e) => setNewUsername(e.target.value)}
                               placeholder="Username unik"
-                              className="px-3 py-2 border border-slate-200 rounded-lg focus:outline-none"
+                              className="px-3 py-2 border border-slate-200 rounded-lg focus:outline-none text-xs"
                             />
                             <input
                               type="text"
                               value={newPassword}
                               onChange={(e) => setNewPassword(e.target.value)}
                               placeholder="Password"
-                              className="px-3 py-2 border border-slate-200 rounded-lg focus:outline-none"
+                              className="px-3 py-2 border border-slate-200 rounded-lg focus:outline-none text-xs font-mono"
                             />
                             <div className="flex gap-2">
                               <select
                                 value={newUserRole}
                                 onChange={(e) => setNewUserRole(e.target.value as 'admin' | 'petugas')}
-                                className="flex-1 px-2.5 py-2 border border-slate-200 rounded-lg bg-white focus:outline-none"
+                                className="flex-1 px-2.5 py-2 border border-slate-200 rounded-lg bg-white focus:outline-none text-xs"
                               >
                                 <option value="petugas">Petugas</option>
                                 <option value="admin">Admin</option>
@@ -1066,7 +1187,7 @@ export default function SettingsView({
                                 <select
                                   value={newUserTeam}
                                   onChange={(e) => setNewUserTeam(e.target.value)}
-                                  className="flex-1 px-2.5 py-2 border border-slate-200 rounded-lg bg-white focus:outline-none"
+                                  className="flex-1 px-2.5 py-2 border border-slate-200 rounded-lg bg-white focus:outline-none text-xs"
                                 >
                                   {teamsList.map((t) => (
                                     <option key={t} value={t}>{t}</option>
@@ -1081,33 +1202,59 @@ export default function SettingsView({
                             onClick={() => {
                               setUserError(null);
                               if (!newName.trim() || !newUsername.trim() || !newPassword.trim()) {
-                                setUserError('Semua kolom data pengguna baru harus diisi.');
+                                setUserError('Semua kolom data pengguna wajib diisi.');
                                 return;
                               }
-                              const exists = usersList.some(user => user.username.toLowerCase() === newUsername.trim().toLowerCase());
+                              
+                              const otherUsers = editingUser 
+                                ? usersList.filter(user => user.id !== editingUser.id)
+                                : usersList;
+                              const exists = otherUsers.some(user => user.username.toLowerCase() === newUsername.trim().toLowerCase());
                               if (exists) {
-                                setUserError('Username sudah terpakai.');
+                                setUserError('Username sudah terpakai oleh akun lain.');
                                 return;
                               }
-                              const newUser: User = {
-                                id: `USR-${Date.now()}`,
-                                name: newName.trim(),
-                                username: newUsername.trim(),
-                                password: newPassword,
-                                role: newUserRole,
-                                team: newUserRole === 'petugas' ? newUserTeam : '',
-                                createdAt: new Date().toISOString().split('T')[0]
-                              };
-                              onUpdateUsers && onUpdateUsers([...usersList, newUser]);
-                              setNewName('');
-                              setNewUsername('');
-                              setNewPassword('');
-                              setUserSuccess('Akun pengguna baru berhasil dibuat.');
+
+                              if (editingUser) {
+                                const updated = usersList.map(u => u.id === editingUser.id ? {
+                                  ...u,
+                                  name: newName.trim(),
+                                  username: newUsername.trim(),
+                                  password: newPassword,
+                                  role: newUserRole,
+                                  team: newUserRole === 'petugas' ? newUserTeam : '',
+                                  picture: userPic || undefined
+                                } : u);
+                                onUpdateUsers && onUpdateUsers(updated);
+                                setEditingUser(null);
+                                setNewName('');
+                                setNewUsername('');
+                                setNewPassword('');
+                                setUserPic(null);
+                                setUserSuccess('Akun pengguna berhasil diperbarui.');
+                              } else {
+                                const newUser: User = {
+                                  id: `USR-${Date.now()}`,
+                                  name: newName.trim(),
+                                  username: newUsername.trim(),
+                                  password: newPassword,
+                                  role: newUserRole,
+                                  team: newUserRole === 'petugas' ? newUserTeam : '',
+                                  picture: userPic || undefined,
+                                  createdAt: new Date().toISOString().split('T')[0]
+                                };
+                                onUpdateUsers && onUpdateUsers([...usersList, newUser]);
+                                setNewName('');
+                                setNewUsername('');
+                                setNewPassword('');
+                                setUserPic(null);
+                                setUserSuccess('Akun pengguna baru berhasil dibuat.');
+                              }
                               setTimeout(() => setUserSuccess(null), 2500);
                             }}
-                            className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold flex items-center justify-center space-x-1 cursor-pointer transition shadow-xs"
+                            className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold flex items-center justify-center space-x-1 cursor-pointer transition shadow-xs text-xs"
                           >
-                            <span>Buat Akun Pengguna</span>
+                            <span>{editingUser ? 'Simpan Perubahan Akun' : 'Buat Akun Pengguna'}</span>
                           </button>
                         </div>
                       </div>
